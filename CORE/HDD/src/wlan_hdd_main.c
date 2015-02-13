@@ -15585,7 +15585,6 @@ static int hdd_cnss_wlan_mac(hdd_context_t *hdd_ctx)
  */
 static int hdd_initialize_mac_address(hdd_context_t *hdd_ctx)
 {
-	VOS_STATUS status;
 	int ret;
 
 	ret = hdd_cnss_wlan_mac(hdd_ctx);
@@ -15596,14 +15595,16 @@ static int hdd_initialize_mac_address(hdd_context_t *hdd_ctx)
 	hddLog(LOGW, FL("Can't update MAC via platform driver ret: %d"), ret);
 
 	if (!hdd_ctx->cfg_ini->skip_mac_config) {
-		status = hdd_update_mac_config(hdd_ctx);
-		if (status != VOS_STATUS_SUCCESS) {
-			hddLog(LOGW,
-			      FL("Failed to update MAC from %s status: %d"),
-			      WLAN_MAC_FILE, status);
-			return -EIO;
-		}
+		// IKSWN-1989 - Moto fpx478
+		if (VOS_STATUS_SUCCESS != hdd_update_mac_config(hdd_ctx)) {
+			if (VOS_STATUS_SUCCESS != hdd_update_mac_serial(hdd_ctx)) {
+				hddLog(LOGW, FL("Failed to update MAC from %s"), WLAN_MAC_FILE);
+				return -EIO;
+			}
+		} 
+		// END IKSWN-1989
 	}
+
 	return 0;
 }
 /**---------------------------------------------------------------------------
