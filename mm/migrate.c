@@ -40,7 +40,6 @@
 #include <linux/ptrace.h>
 #include <linux/compaction.h>
 #include <trace/events/kmem.h>
-#include <linux/ptrace.h>
 
 #include <asm/tlbflush.h>
 
