@@ -81,7 +81,7 @@ ifeq ($(KERNEL_BUILD), 0)
 			CONFIG_DPTRACE_ENABLE := y
 		else
 			ifeq ($(findstring perf,$(KERNEL_DEFCONFIG)),)
-				CONFIG_DPTRACE_ENABLE := y
+				CONFIG_DPTRACE_ENABLE := n
 			endif
 		endif
 	endif
