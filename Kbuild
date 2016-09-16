@@ -6,6 +6,13 @@ else
 	KERNEL_BUILD := 0
 endif
 
+# WLAN_WHITE_LIST - WLAN Radiated Power Test
+# For user software build, wlan driver needs to allow the factory
+# commnds only for Tx_opcode and NART commands based off 12M doc
+ifeq ($(TARGET_BUILD_VARIANT),user)
+CDEFINES += -DWLAN_WHITE_LIST
+endif
+
 ifeq ($(CONFIG_CLD_HL_SDIO_CORE), y)
 	CONFIG_QCA_WIFI_SDIO := 1
 	CONFIG_ROME_IF = sdio
