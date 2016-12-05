@@ -784,8 +784,14 @@ static uint16_t wmi_tag_sta_powersave_cmd(wmi_unified_t wmi_hdl, wmi_buf_t buf)
 	ps_cmd = (wmi_sta_powersave_param_cmd_fixed_param *)wmi_buf_data(buf);
 
 	switch(ps_cmd->param) {
+#ifdef CONFIG_MSM8996
+        // Griffin has Runtime and Modulated DTIM enabled, which are disabled on Kinzie
+        // It is found that this change is negatively impacting current drain in kinzie case
+        // which has these ini params disabled, right solution from QC of enabling these only
+        // when makes sense would take some time from, till then remove this based on build time.
 	case WMI_STA_PS_PARAM_TX_WAKE_THRESHOLD:
 	case WMI_STA_PS_PARAM_INACTIVITY_TIME:
+#endif
 	case WMI_STA_PS_ENABLE_QPOWER:
 		return HTC_TX_PACKET_TAG_AUTO_PM;
 	default:
