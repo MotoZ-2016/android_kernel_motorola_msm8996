@@ -58,7 +58,7 @@ gb-sensors_ext-y := sensors_ext.o sensors_ext_iio.o
 obj-y += greybus.o
 #obj-y += gb-phy.o
 
-# obj-y += gb-audio.o
+obj-y += gb-audio.o
 
 #obj-y += gb-vibrator.o
 obj-y += gb-battery.o
