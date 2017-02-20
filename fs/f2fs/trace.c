@@ -25,12 +25,12 @@ static inline void __print_last_io(void)
 	if (!last_io.len)
 		return;
 
-	trace_printk("%3x:%3x %4x %-16s %2x %5x %12x %4x\n",
+	/*trace_printk("%3x:%3x %4x %-16s %2x %5x %12x %4x\n",
 			last_io.major, last_io.minor,
 			last_io.pid, "----------------",
 			last_io.type,
 			last_io.fio.rw, last_io.fio.blk_addr,
-			last_io.len);
+			last_io.len);*/
 	memset(&last_io, 0, sizeof(last_io));
 }
 
@@ -72,9 +72,9 @@ void f2fs_trace_pid(struct page *page)
 
 	f2fs_radix_tree_insert(&pids, pid, current);
 
-	trace_printk("%3x:%3x %4x %-16s\n",
+	/*trace_printk("%3x:%3x %4x %-16s\n",
 			MAJOR(inode->i_sb->s_dev), MINOR(inode->i_sb->s_dev),
-			pid, current->comm);
+			pid, current->comm);*/
 out:
 	spin_unlock(&pids_lock);
 	radix_tree_preload_end();
