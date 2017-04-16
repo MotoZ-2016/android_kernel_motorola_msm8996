@@ -379,7 +379,7 @@ static int gport_connect(struct f_gser *gser)
 	unsigned	port_num;
 	int		ret;
 
-	pr_debug("%s: transport: %s f_gser: %pK gserial: %pK port_num: %d\n",
+	pr_debug("%s: transport: %s f_gser: %p gserial: %p port_num: %d\n",
 			__func__, xport_to_str(gser->transport),
 			gser, &gser->port, gser->port_num);
 
@@ -425,7 +425,7 @@ static int gport_disconnect(struct f_gser *gser)
 
 	port_num = gserial_ports[gser->port_num].client_port_num;
 
-	pr_debug("%s: transport: %s f_gser: %pK gserial: %pK port_num: %d\n",
+	pr_debug("%s: transport: %s f_gser: %p gserial: %p port_num: %d\n",
 			__func__, xport_to_str(gser->transport),
 			gser, &gser->port, gser->port_num);
 
@@ -626,7 +626,7 @@ static void gser_suspend(struct usb_function *f)
 
 	port_num = gserial_ports[gser->port_num].client_port_num;
 
-	pr_debug("%s: transport: %s f_gser: %pK gserial: %pK port_num: %d\n",
+	pr_debug("%s: transport: %s f_gser: %p gserial: %p port_num: %d\n",
 			__func__, xport_to_str(gser->transport),
 			gser, &gser->port, gser->port_num);
 
@@ -648,7 +648,7 @@ static void gser_resume(struct usb_function *f)
 
 	port_num = gserial_ports[gser->port_num].client_port_num;
 
-	pr_debug("%s: transport: %s f_gser: %pK gserial: %pK port_num: %d\n",
+	pr_debug("%s: transport: %s f_gser: %p gserial: %p port_num: %d\n",
 			__func__, xport_to_str(gser->transport),
 			gser, &gser->port, gser->port_num);
 	/*
@@ -1112,10 +1112,9 @@ static struct usb_function *gser_alloc(struct usb_function_instance *fi)
 	struct f_serial_opts *opts;
 
 	opts = container_of(fi, struct f_serial_opts, func_inst);
-
 	if (nr_ports) {
 		opts->port_num = gser_next_free_port++;
-		if (opts->port_num >= GSERIAL_NO_PORTS) {
+		if(opts->port_num >= GSERIAL_NO_PORTS) {
 			pr_err("%s: No serial allowed for port %d\n",
 					__func__, opts->port_num);
 			return ERR_PTR(-EINVAL);
