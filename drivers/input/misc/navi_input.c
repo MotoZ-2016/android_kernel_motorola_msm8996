@@ -67,6 +67,7 @@ struct navi_cmd_struct cmd_list;
 #define KEY_FPS_XMINUS 621
 #define KEY_FPS_DOUBLE_TAP 622
 
+#define KEY_FPS_DBLTAP 622
 
 /*
  * ENABLE_SWIPE_UP_DOWN properties
@@ -146,8 +147,7 @@ unsigned int prev_keycode = 0;
  */
 #define ENABLE_TRANSLATED_SINGLE_CLICK	ENABLE
 #define ENABLE_TRANSLATED_DOUBLE_CLICK	ENABLE
-#define ENABLE_TRANSLATED_LONG_TOUCH	DISABLE
-
+#define ENABLE_TRANSLATED_LONG_TOUCH	ENABLE
 
 /*
  * @ LONGTOUCH_INTERVAL : Minimum time finger stay-on that counted to long-touch.
@@ -183,6 +183,7 @@ unsigned int prev_keycode = 0;
 #define	KEYEVENT_CLICK              KEY_FPS_TAP /* 0x232 */
 #define	KEYEVENT_CLICK_ACTION       KEY_PRESS_RELEASE
 #define	KEYEVENT_DOUBLECLICK        KEY_FPS_DOUBLE_TAP
+#define	KEYEVENT_DOUBLECLICK        KEY_FPS_DBLTAP
 #define	KEYEVENT_DOUBLECLICK_ACTION KEY_PRESS_RELEASE
 #define	KEYEVENT_LONGTOUCH          KEY_FPS_HOLD /* 0x233 */
 #define	KEYEVENT_LONGTOUCH_ACTION   KEY_PRESS_RELEASE
