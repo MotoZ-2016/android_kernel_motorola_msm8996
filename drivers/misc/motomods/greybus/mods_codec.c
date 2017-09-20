@@ -86,6 +86,8 @@ static const char *const mods_capture_use_case[] = {
 	"Voice",
 	"Raw",
 	"Camcorder",
+	"Ambisonic",
+	"Voice-Rec",
 };
 
 static const struct soc_enum mods_codec_enum[] = {
@@ -135,6 +137,7 @@ static void mods_codec_work(struct work_struct *work)
 	if (!gb_codec) {
 		priv->rx_active = false;
 		priv->tx_active = false;
+		priv->is_params_set = false;
 		return;
 	}
 
@@ -151,6 +154,7 @@ static void mods_codec_work(struct work_struct *work)
 		 */
 		priv->rx_active = false;
 		priv->tx_active = false;
+		priv->is_params_set = false;
 		mutex_unlock(&gb_codec->lock);
 		return;
 	}
@@ -190,8 +194,8 @@ static void mods_codec_work(struct work_struct *work)
 		if (err)
 			pr_err("%s() failed to deactivate I2S port %d\n",
 				__func__, port_type);
-		else
-			*port_active = false;
+
+		*port_active = false;
 	}
 
 	mutex_lock(&gb_codec->lock);
@@ -498,13 +502,17 @@ static int mods_codec_hw_params(struct snd_pcm_substream *substream,
 	rate = params_rate(params);
 	chans = params_channels(params);
 	format = params_format(params);
-	bytes_per_chan = snd_pcm_format_width(params_format(params)) / 8;
-	is_le = snd_pcm_format_little_endian(params_format(params));
+	bytes_per_chan = snd_pcm_format_width(format) / 8;
+	is_le = snd_pcm_format_little_endian(format);
 
 	err = gb_i2s_mgmt_set_cfg(gb_codec, rate, chans, format,
 						bytes_per_chan, is_le);
 	if (!err)
 		priv->is_params_set = true;
+	else
+		pr_err("%s: failed to set hw params\n",
+			__func__);
+
 
 	mutex_lock(&gb_codec->lock);
 	gb_mods_i2s_put(gb_codec);
@@ -980,14 +988,14 @@ static struct snd_soc_dai_driver mods_codec_codec_dai = {
 		.rates		= GB_RATES,
 		.formats	= GB_FMTS,
 		.channels_min	= 1,
-		.channels_max	= 2,
+		.channels_max	= 4,
 	},
 	.capture = {
 		.stream_name = "Mods Dai Capture",
 		.rates		= GB_RATES,
 		.formats	= GB_FMTS,
 		.channels_min	= 1,
-		.channels_max	= 2,
+		.channels_max	= 4,
 	},
 	.ops = &mods_codec_dai_ops,
 };

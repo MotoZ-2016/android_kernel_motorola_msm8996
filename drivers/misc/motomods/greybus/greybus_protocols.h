@@ -359,10 +359,14 @@ struct gb_battery_current_now_response {
 #define GB_PTP_POWER_AVAILABLE_INT	0x02
 
 /* Mod power source supplying current to Phone*/
-#define GB_PTP_POWER_SOURCE_NONE	0x00
-#define GB_PTP_POWER_SOURCE_BATTERY	0x01
-#define GB_PTP_POWER_SOURCE_WIRED	0x02
-#define GB_PTP_POWER_SOURCE_WIRELESS	0x03
+#define GB_PTP_POWER_SOURCE_NONE		0x00
+#define GB_PTP_POWER_SOURCE_BATTERY		0x01
+#define GB_PTP_POWER_SOURCE_WIRED		0x02
+#define GB_PTP_POWER_SOURCE_WIRELESS		0x03
+#define GB_PTP_POWER_SOURCE_NONE_TURBO		0x04
+#define GB_PTP_POWER_SOURCE_BATTERY_TURBO	0x05
+#define GB_PTP_POWER_SOURCE_WIRED_TURBO		0x06
+#define GB_PTP_POWER_SOURCE_WIRELESS_TURBO	0x07
 
 /* Mod that does not support variable voltage charging */
 #define GB_PTP_VARIABLE_VOLTAGE_NOT_SUPPORTED	5000000		/* uV */
@@ -920,13 +924,17 @@ struct gb_i2s_mgmt_stop_request {
 /* Capture use cases bit mask*/
 
 /* Default setting capture */
-#define GB_AUDIO_CAPTURE_DEFAULT_USE_CASE		BIT(0)
-/* Voice  */
+#define GB_AUDIO_CAPTURE_DEFAULT_USE_CASE	BIT(0)
+/* Optimized for Voice  */
 #define GB_AUDIO_CAPTURE_VOICE_USE_CASE		BIT(1)
 /* Unprocessed pcm capture */
 #define GB_AUDIO_CAPTURE_RAW_USE_CASE		BIT(2)
-/* Camcorder */
-#define GB_AUDIO_CAPTURE_CAMCORDER_USE_CASE		BIT(3)
+/* Optimized for Camcorder */
+#define GB_AUDIO_CAPTURE_CAMCORDER_USE_CASE	BIT(3)
+/* Ambisonic WXYZ 4-channel Capture */
+#define GB_AUDIO_CAPTURE_AMBISONIC_USE_CASE	BIT(4)
+/* Optimized for voice recognition */
+#define GB_AUDIO_CAPTURE_VOICE_REC_USE_CASE	BIT(5)
 
 /* audio output devices bit mask */
 #define GB_AUDIO_DEVICE_OUT_LOUDSPEAKER BIT(0)
