@@ -27183,22 +27183,17 @@ static void hdd_config_sched_scan_plan(tpSirPNOScanReq pno_req,
 				hdd_context_t *hdd_ctx)
 {
 	if (request->n_scan_plans == 2) {
-		pno_req->fast_scan_period =
-			request->scan_plans[0].interval * MSEC_PER_SEC;
-		pno_req->fast_scan_max_cycles =
-			request->scan_plans[0].iterations;
-		pno_req->slow_scan_period =
-			request->scan_plans[1].interval * MSEC_PER_SEC;
+		pno_req->fast_scan_period =45000;
+		pno_req->fast_scan_max_cycles=7;
+		pno_req->slow_scan_period =480000;
 		hddLog(LOGE, "Base scan interval: %d sec, scan cycles: %d, slow scan interval %d",
 		       request->scan_plans[0].interval,
 		       request->scan_plans[0].iterations,
 		       request->scan_plans[1].interval);
 	} else if (request->n_scan_plans == 1) {
-		pno_req->fast_scan_period = request->scan_plans[0].interval *
-			MSEC_PER_SEC;
-		pno_req->fast_scan_max_cycles = 1;
-		pno_req->slow_scan_period = request->scan_plans[0].interval *
-			MSEC_PER_SEC;
+		pno_req->fast_scan_period = 45000;
+		pno_req->fast_scan_max_cycles = 7;
+		pno_req->slow_scan_period =480000;
 	} else {
 		hddLog(LOGE, "Invalid number of scan plans %d !!",
 		       request->n_scan_plans);
@@ -27209,12 +27204,9 @@ static void hdd_config_sched_scan_plan(tpSirPNOScanReq pno_req,
 				struct cfg80211_sched_scan_request *request,
 				hdd_context_t *hdd_ctx)
 {
-	pno_req->fast_scan_period = request->interval;
-	pno_req->fast_scan_max_cycles =
-		hdd_ctx->cfg_ini->configPNOScanTimerRepeatValue;
-	pno_req->slow_scan_period =
-		hdd_ctx->cfg_ini->pno_slow_scan_multiplier *
-		pno_req->fast_scan_period;
+	pno_req->fast_scan_period = 45000;
+	pno_req->fast_scan_max_cycles = 7;
+	pno_req->slow_scan_period =480000;
 	hddLog(LOGE, "Base scan interval: %d sec PNOScanTimerRepeatValue: %d",
 		    (request->interval / 1000),
 		    hdd_ctx->cfg_ini->configPNOScanTimerRepeatValue);
