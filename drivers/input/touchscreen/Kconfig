@@ -1274,8 +1274,8 @@ config TOUCHSCREEN_FT5336
 	help
 	Say Y here if you have a ft5336 touchscreen.
 
-config WAKE_GESTURES
-        bool "wake gestures"
+config SCREEN_OFF_GESTURES
+        bool "screen off gestures"
 
 source "drivers/input/touchscreen/gt9xx/Kconfig"
 source "drivers/input/touchscreen/gt9xx_mmi/Kconfig"
