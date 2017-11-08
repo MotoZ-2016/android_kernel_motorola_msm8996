@@ -854,7 +854,7 @@ WLANSAP_StartBss
             pSapCtx->csrRoamProfile.csrPersona;
         pmac->sap.sapCtxList[pSapCtx->sessionId].sessionID =
             pSapCtx->sessionId;
-
+#if 0
         // Copy MAC filtering settings to sap context
         pSapCtx->eSapMacAddrAclMode = pConfig->SapMacaddr_acl;
         vos_mem_copy(pSapCtx->acceptMacList, pConfig->accept_mac, sizeof(pConfig->accept_mac));
@@ -863,7 +863,7 @@ WLANSAP_StartBss
         vos_mem_copy(pSapCtx->denyMacList, pConfig->deny_mac, sizeof(pConfig->deny_mac));
         pSapCtx->nDenyMac = pConfig->num_deny_mac;
         sapSortMacList(pSapCtx->denyMacList, pSapCtx->nDenyMac);
-
+#endif
         pSapCtx->beacon_tx_rate = pConfig->beacon_tx_rate;
 
         /* Fill in the event structure for FSM */
