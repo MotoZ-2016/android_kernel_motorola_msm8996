@@ -5967,10 +5967,19 @@ static int __iw_setint_getnone(struct net_device *dev,
     hdd_wext_state_t  *pWextState =  WLAN_HDD_GET_WEXT_STATE_PTR(pAdapter);
     hdd_context_t     *pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
     tSmeConfigParams smeConfig;
+    //BEGIN MOTO thakurr IKSWO-21420
+#if 0
     int *value = (int *)extra;
     int sub_cmd = value[0];
     int set_value = value[1];
     int ret;
+#endif
+    int cmd_len = wrqu->data.length;
+    int *value = (int *) kmalloc(cmd_len+1, GFP_KERNEL);  // Motorola, IKSWO-21420
+    int sub_cmd;
+    int set_value;
+    int ret=0;
+    //END MOTO thakurr IKSWO-21420
     int enable_pbm, enable_mp;
     eHalStatus status;
 
@@ -5979,14 +5988,27 @@ static int __iw_setint_getnone(struct net_device *dev,
 #endif
 
     ENTER();
-
     ret = wlan_hdd_validate_context(pHddCtx);
     if (0 != ret)
-        return ret;
+	 return ret;
 
     INIT_COMPLETION(pWextState->completion_var);
     memset(&smeConfig, 0x00, sizeof(smeConfig));
+    //BEGIN MOTO thakurr IKSWO-21420
+    if(value == NULL)
+	    return -ENOMEM;
 
+    if(copy_from_user((char *) value, (char*)(wrqu->data.pointer), cmd_len)) {
+	    hddLog(VOS_TRACE_LEVEL_FATAL, "%s -- copy_from_user --data pointer failed! bailing",
+			    __FUNCTION__);
+	    kfree(value);
+	    return -EFAULT;
+    }
+
+    sub_cmd = value[0];
+    set_value = value[1];
+    kfree(value);
+    //END MOTO thakurr IKSWO-21420
 
     switch(sub_cmd)
     {
