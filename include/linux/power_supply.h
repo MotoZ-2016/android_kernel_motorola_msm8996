@@ -370,6 +370,7 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_USB_LPM,
 	POWER_SUPPLY_PROP_USB_OWNER,
 	POWER_SUPPLY_PROP_CHG_PRESENT,
+	POWER_SUPPLY_PROP_REAL_TYPE,
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_PROP_CHARGE_COUNTER_EXT,
 	/* Properties of type `const char *' */
