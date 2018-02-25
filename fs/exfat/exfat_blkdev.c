@@ -94,7 +94,7 @@ s32 bdev_close(struct super_block *sb)
 	return FFS_SUCCESS;
 }
 
-s32 bdev_read(struct super_block *sb, u32 secno, struct buffer_head **bh, u32 num_secs, s32 read)
+s32 bdev_read(struct super_block *sb, sector_t secno, struct buffer_head **bh, u32 num_secs, s32 read)
 {
 	BD_INFO_T *p_bd = &(EXFAT_SB(sb)->bd_info);
 	FS_INFO_T *p_fs = &(EXFAT_SB(sb)->fs_info);
@@ -126,19 +126,7 @@ s32 bdev_read(struct super_block *sb, u32 secno, struct buffer_head **bh, u32 nu
 	return FFS_MEDIAERR;
 }
 
-s32 bdev_sync_dirty_buffer(struct buffer_head *bh,
-					struct super_block *sb, int sync)
-{
-	int ret = 0;
-
-	if (exfat_readonly(sb))
-		return FFS_MEDIAERR;
-	if (sync)
-		ret = sync_dirty_buffer(bh);
-	return ret;
-}
-
-s32 bdev_write(struct super_block *sb, u32 secno, struct buffer_head *bh, u32 num_secs, s32 sync)
+s32 bdev_write(struct super_block *sb, sector_t secno, struct buffer_head *bh, u32 num_secs, s32 sync)
 {
 	s32 count;
 	struct buffer_head *bh2;
@@ -160,7 +148,7 @@ s32 bdev_write(struct super_block *sb, u32 secno, struct buffer_head *bh, u32 nu
 		set_buffer_uptodate(bh);
 		mark_buffer_dirty(bh);
 		unlock_buffer(bh);
-		if (bdev_sync_dirty_buffer(bh, sb, sync))
+		if (sync && (sync_dirty_buffer(bh) != 0))
 			return FFS_MEDIAERR;
 	} else {
 		count = num_secs << p_bd->sector_size_bits;
@@ -175,7 +163,7 @@ s32 bdev_write(struct super_block *sb, u32 secno, struct buffer_head *bh, u32 nu
 		set_buffer_uptodate(bh2);
 		mark_buffer_dirty(bh2);
 		unlock_buffer(bh2);
-		if (bdev_sync_dirty_buffer(bh2, sb, sync)) {
+		if (sync && (sync_dirty_buffer(bh2) != 0)) {
 			__brelse(bh2);
 			goto no_bh;
 		}
@@ -203,9 +191,6 @@ s32 bdev_sync(struct super_block *sb)
 #endif /* CONFIG_EXFAT_KERNEL_DEBUG */
 
 	if (!p_bd->opened)
-		return FFS_MEDIAERR;
-
-	if (exfat_readonly(sb))
 		return FFS_MEDIAERR;
 
 	return sync_blockdev(sb->s_bdev);
