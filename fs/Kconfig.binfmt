@@ -183,20 +183,3 @@ config COREDUMP
 	  This option enables support for performing core dumps. You almost
 	  certainly want to say Y here. Not necessary on systems that never
 	  need debugging or only ever run flawless code.
-
-config COREDUMP_GZ
-	bool "Enable compressed core dump"
-	depends on COREDUMP
-	select ZLIB_DEFLATE
-	help
-	  This option enables in-kernel gzip compression of core dumps. If
-	  core_pattern ends in ".gz" (and is not a pipe), any core dumps
-	  produced will be compressed using gzip.
-
-config COREDUMP_PERMISSION_HACK
-	bool "Enable coredump security domain switch"
-	depends on COREDUMP
-	help
-	  This option switches a coredumping process to root permissions
-	  and into the "coredump" security domain. This is done to facilitate
-	  writing of coredumps to the sdcard on Motorola Android devices.

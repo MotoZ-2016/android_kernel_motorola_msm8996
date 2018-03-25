@@ -27,8 +27,6 @@
 
 #define FEATURE_SUPPORTED(x)	((feature_mask << (i * 8)) & (1 << x))
 
-uint16_t md_support;
-
 /* tracks which peripheral is undergoing SSR */
 static uint16_t reg_dirty;
 static void diag_notify_md_client(uint8_t peripheral, int data);
@@ -113,12 +111,6 @@ void diag_notify_md_client(uint8_t peripheral, int data)
 	int stat = 0;
 	struct siginfo info;
 
-	if (data == DIAG_STATUS_OPEN) {
-		md_support |= PERIPHERAL_MASK(peripheral);
-	} else if (data == DIAG_STATUS_CLOSED) {
-		md_support ^= PERIPHERAL_MASK(peripheral);
-	}
-
 	if (peripheral > NUM_PERIPHERALS)
 		return;
 
@@ -161,7 +153,7 @@ static void process_pd_status(uint8_t *buf, uint32_t len,
 
 	if (!buf || peripheral >= NUM_PERIPHERALS || len < sizeof(*pd_msg))
 		return;
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS, "process pd status of len %d", len);
+
 	pd_msg = (struct diag_ctrl_msg_pd_status *)buf;
 	pd = pd_msg->pd_id;
 	status = (pd_msg->status == 0) ? DIAG_STATUS_OPEN : DIAG_STATUS_CLOSED;
@@ -221,8 +213,6 @@ static void process_command_deregistration(uint8_t *buf, uint32_t len,
 	 * Perform Basic sanity. The len field is the size of the data payload.
 	 * This doesn't include the header size.
 	 */
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"entered process command deregistration len %d", len);
 	if (!buf || peripheral >= NUM_PERIPHERALS || len == 0)
 		return;
 
@@ -232,7 +222,7 @@ static void process_command_deregistration(uint8_t *buf, uint32_t len,
 	read_len += header_len - (2 * sizeof(uint32_t));
 
 	if (dereg->count_entries == 0) {
-		pr_err("diag: In %s, received reg tbl with no entries\n",
+		pr_debug("diag: In %s, received reg tbl with no entries\n",
 			 __func__);
 		return;
 	}
@@ -268,8 +258,6 @@ static void process_command_registration(uint8_t *buf, uint32_t len,
 	 * Perform Basic sanity. The len field is the size of the data payload.
 	 * This doesn't include the header size.
 	 */
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"entered process_command_registration ");
 	if (!buf || peripheral >= NUM_PERIPHERALS || len == 0)
 		return;
 
@@ -279,8 +267,7 @@ static void process_command_registration(uint8_t *buf, uint32_t len,
 	read_len += header_len - (2 * sizeof(uint32_t));
 
 	if (reg->count_entries == 0) {
-		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-			"diag: In %s, received reg tbl with no entries\n",
+		pr_debug("diag: In %s, received reg tbl with no entries\n",
 			 __func__);
 		return;
 	}
@@ -297,8 +284,7 @@ static void process_command_registration(uint8_t *buf, uint32_t len,
 	}
 
 	if (i != reg->count_entries) {
-		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-			"diag: In %s, reading less than available, read_len: %d, len: %d count: %d\n",
+		pr_err("diag: In %s, reading less than available, read_len: %d, len: %d count: %d\n",
 		       __func__, read_len, len, reg->count_entries);
 	}
 }
@@ -397,8 +383,7 @@ static void process_incoming_feature_mask(uint8_t *buf, uint32_t len,
 		if (FEATURE_SUPPORTED(F_DIAG_SOCKETS_ENABLED))
 			enable_socket_feature(peripheral);
 	}
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"received feature mask for peripheral %d\n", peripheral);
+
 	process_socket_feature(peripheral);
 	process_log_on_demand_feature(peripheral);
 }
@@ -414,14 +399,12 @@ static void process_last_event_report(uint8_t *buf, uint32_t len,
 
 	if (!buf || peripheral >= NUM_PERIPHERALS || len != pkt_len)
 		return;
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"received event report ctrl packet of len %d",
-		len);
+
 	mutex_lock(&event_mask.lock);
 	header = (struct diag_ctrl_last_event_report *)ptr;
 	event_size = ((header->event_last_id / 8) + 1);
 	if (event_size >= driver->event_mask_size) {
-		pr_err("diag: In %s, receiving event mask size more that Apps can handle\n",
+		pr_debug("diag: In %s, receiving event mask size more that Apps can handle\n",
 			 __func__);
 		temp = krealloc(driver->event_mask->ptr, event_size,
 				GFP_KERNEL);
@@ -439,8 +422,6 @@ static void process_last_event_report(uint8_t *buf, uint32_t len,
 		driver->last_event_id = header->event_last_id;
 err:
 	mutex_unlock(&event_mask.lock);
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"completed processing event report ctrl packet of len %d", len);
 }
 
 static void process_log_range_report(uint8_t *buf, uint32_t len,
@@ -461,9 +442,7 @@ static void process_log_range_report(uint8_t *buf, uint32_t len,
 	ptr += header_len;
 	/* Don't account for pkt_id and length */
 	read_len += header_len - (2 * sizeof(uint32_t));
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"received log  range ctrl packet of len %d read_len %d",
-		len, read_len);
+
 	driver->num_equip_id[peripheral] = header->num_ranges;
 	for (i = 0; i < header->num_ranges && read_len < len; i++) {
 		log_range = (struct diag_ctrl_log_range *)ptr;
@@ -483,8 +462,6 @@ static void process_log_range_report(uint8_t *buf, uint32_t len,
 		mask_ptr->range = LOG_ITEMS_TO_SIZE(log_range->num_items);
 		mutex_unlock(&(mask_ptr->lock));
 	}
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"completed log  range ctrl packet of len %d", len);
 }
 
 static int update_msg_mask_tbl_entry(struct diag_msg_mask_t *mask,
@@ -527,13 +504,11 @@ static void process_ssid_range_report(uint8_t *buf, uint32_t len,
 
 	if (!buf || peripheral >= NUM_PERIPHERALS || len < min_len)
 		return;
+
 	header = (struct diag_ctrl_ssid_range_report *)ptr;
 	ptr += header_len;
 	/* Don't account for pkt_id and length */
 	read_len += header_len - (2 * sizeof(uint32_t));
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"received ssid  range ctrl packet of len %d read_len %d",
-		len, read_len);
 
 	mutex_lock(&driver->msg_mask_lock);
 	driver->max_ssid_count[peripheral] = header->count;
@@ -580,9 +555,6 @@ static void process_ssid_range_report(uint8_t *buf, uint32_t len,
 		driver->msg_mask_tbl_count += 1;
 	}
 	mutex_unlock(&driver->msg_mask_lock);
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"completed processing ssid  range ctrl packet of len %d read_len %d",
-		len, read_len);
 }
 
 static void diag_build_time_mask_update(uint8_t *buf,
@@ -670,9 +642,7 @@ static void process_build_mask_report(uint8_t *buf, uint32_t len,
 	ptr += header_len;
 	/* Don't account for pkt_id and length */
 	read_len += header_len - (2 * sizeof(uint32_t));
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"entered processing build mask ctrl packet of len %d read_len %d",
-		len, read_len);
+
 	for (i = 0; i < header->count && read_len < len; i++) {
 		range = (struct diag_ssid_range_t *)ptr;
 		ptr += sizeof(struct diag_ssid_range_t);
@@ -682,9 +652,6 @@ static void process_build_mask_report(uint8_t *buf, uint32_t len,
 		ptr += num_items * sizeof(uint32_t);
 		read_len += num_items * sizeof(uint32_t);
 	}
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"completed processing build mask ctrl packet of len %d read_len %d",
-		len, read_len);
 }
 
 void diag_cntl_process_read_data(struct diagfwd_info *p_info, void *buf,
@@ -695,17 +662,12 @@ void diag_cntl_process_read_data(struct diagfwd_info *p_info, void *buf,
 	uint8_t *ptr = buf;
 	struct diag_ctrl_pkt_header_t *ctrl_pkt = NULL;
 
-	if (!buf || len <= 0 || !p_info) {
-		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-			"failed input validation in %s", __func__);
+	if (!buf || len <= 0 || !p_info)
 		return;
-	}
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-		"received control packet data buf %p len %d\n", ptr, len);
+
 	if (reg_dirty & PERIPHERAL_MASK(p_info->peripheral)) {
-		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-			"diag: dropping command registration from peripheral %d\n",
-			p_info->peripheral);
+		pr_err_ratelimited("diag: dropping command registration from peripheral %d\n",
+		       p_info->peripheral);
 		return;
 	}
 
@@ -745,17 +707,17 @@ void diag_cntl_process_read_data(struct diagfwd_info *p_info, void *buf,
 						p_info->peripheral);
 			break;
 		default:
-			pr_err("diag: Control packet %d not supported\n",
+			pr_debug("diag: Control packet %d not supported\n",
 				 ctrl_pkt->pkt_id);
 		}
 		ptr += header_len + ctrl_pkt->len;
 		read_len += header_len + ctrl_pkt->len;
 	}
-	DIAG_LOG(DIAG_DEBUG_PERIPHERALS, "returning from %s\n", __func__);
+
 	return;
 }
 
-int diag_compute_real_time(int idx)
+static int diag_compute_real_time(int idx)
 {
 	int real_time = MODE_REALTIME;
 	if (driver->proc_active_mask == 0) {

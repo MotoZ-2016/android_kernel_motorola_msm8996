@@ -51,18 +51,13 @@ int syscore_suspend(void)
 {
 	struct syscore_ops *ops;
 	int ret = 0;
-	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
 
 	trace_suspend_resume(TPS("syscore_suspend"), 0, true);
 	pr_debug("Checking wakeup interrupts\n");
 
 	/* Return error code if there are any wakeup interrupts pending. */
-	if (pm_wakeup_pending()) {
-		pm_get_active_wakeup_sources(suspend_abort,
-			MAX_SUSPEND_ABORT_LEN);
-		log_suspend_abort_reason(suspend_abort);
+	if (pm_wakeup_pending())
 		return -EBUSY;
-	}
 
 	WARN_ONCE(!irqs_disabled(),
 		"Interrupts enabled before system core suspend.\n");

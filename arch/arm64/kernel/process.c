@@ -43,7 +43,6 @@
 #include <linux/hw_breakpoint.h>
 #include <linux/personality.h>
 #include <linux/notifier.h>
-#include <linux/vmalloc.h>
 
 #include <asm/alternative.h>
 #include <asm/compat.h>
@@ -260,58 +259,6 @@ void show_regs(struct pt_regs * regs)
 	__show_regs(regs);
 }
 
-#ifdef CONFIG_ARCH_THREAD_INFO_ALLOCATOR
-
-struct thread_info *alloc_thread_info_node(struct task_struct *tsk,
-						  int node)
-{
-	struct page *page = alloc_kmem_pages_node(node, (THREADINFO_GFP |
-			__GFP_NOWARN | __GFP_NORETRY) & ~__GFP_NOFAIL,
-			THREAD_SIZE_ORDER);
-	if (page)
-		return page_address(page);
-	else
-		return __vmalloc_node_range(THREAD_SIZE, THREAD_SIZE,
-			VMALLOC_START, VMALLOC_END, THREADINFO_GFP,
-			PAGE_KERNEL, 0, node, __builtin_return_address(0));
-}
-
-void free_thread_info(struct thread_info *ti)
-{
-	if (virt_is_valid_lowmem(ti))
-		free_kmem_pages((unsigned long)ti, THREAD_SIZE_ORDER);
-	else if (is_vmalloc_addr(ti))
-		vfree(ti);
-	else
-		BUG();
-}
-
-void arch_setup_thread_info(struct thread_info *ti)
-{
-	struct vm_struct *vm;
-
-	if (is_vmalloc_addr(ti)) {
-		vm = find_vm_area(ti);
-		if (vm)
-			ti->phys_addr = page_to_phys(vm->pages[0]);
-	}
-}
-
-void arch_account_kernel_stack(struct thread_info *ti, int account)
-{
-	struct zone *zone;
-
-	if (virt_is_valid_lowmem(ti))
-		zone = page_zone(virt_to_page(ti));
-	else if (is_vmalloc_addr(ti))
-		zone = page_zone(phys_to_page(ti->phys_addr));
-	else
-		BUG();
-	mod_zone_page_state(zone, NR_KERNEL_STACK, account);
-}
-
-#endif /* CONFIG_ARCH_THREAD_INFO_ALLOCATOR */
-
 /*
  * Free current thread data structures etc..
  */
@@ -410,25 +357,18 @@ int copy_thread(unsigned long clone_flags, unsigned long stack_start,
 
 static void tls_thread_switch(struct task_struct *next)
 {
-	unsigned long tpidr, tpidrro;
-
 	if (!is_compat_task()) {
+		unsigned long tpidr;
 		asm("mrs %0, tpidr_el0" : "=r" (tpidr));
 		current->thread.tp_value = tpidr;
 	}
 
-	if (is_compat_thread(task_thread_info(next))) {
-		tpidr = 0;
-		tpidrro = next->thread.tp_value;
-	} else {
-		tpidr = next->thread.tp_value;
-		tpidrro = 0;
-	}
+	if (is_compat_thread(task_thread_info(next)))
+		write_sysreg(next->thread.tp_value, tpidrro_el0);
+	else if (!arm64_kernel_unmapped_at_el0())
+		write_sysreg(0, tpidrro_el0);
 
-	asm(
-	"	msr	tpidr_el0, %0\n"
-	"	msr	tpidrro_el0, %1"
-	: : "r" (tpidr), "r" (tpidrro));
+	write_sysreg(next->thread.tp_value, tpidr_el0);
 }
 
 /* Restore the UAO state depending on next's addr_limit */
@@ -493,6 +433,8 @@ unsigned long get_wchan(struct task_struct *p)
 
 unsigned long arch_align_stack(unsigned long sp)
 {
+	if (!(current->personality & ADDR_NO_RANDOMIZE) && randomize_va_space)
+		sp -= get_random_int() & ~PAGE_MASK;
 	return sp & ~0xf;
 }
 

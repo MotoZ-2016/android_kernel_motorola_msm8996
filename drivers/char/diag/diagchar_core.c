@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -171,7 +171,6 @@ uint16_t diag_debug_mask;
 void *diag_ipc_log;
 #endif
 
-extern uint16_t md_support;
 static void diag_md_session_close(struct diag_md_session_t *session_info);
 
 /*
@@ -374,8 +373,8 @@ static int diagchar_open(struct inode *inode, struct file *file)
 	return -ENOMEM;
 
 fail:
-	mutex_unlock(&driver->diagchar_mutex);
 	driver->num_clients--;
+	mutex_unlock(&driver->diagchar_mutex);
 	pr_err_ratelimited("diag: Insufficient memory for new client");
 	return -ENOMEM;
 }
@@ -440,10 +439,8 @@ static void diag_close_logging_process(const int pid)
 	driver->mask_clear = 1;
 	mutex_unlock(&driver->diag_maskclear_mutex);
 
-	mutex_lock(&driver->diagchar_mutex);
 	session_peripheral_mask = session_info->peripheral_mask;
 	diag_md_session_close(session_info);
-	mutex_unlock(&driver->diagchar_mutex);
 	for (i = 0; i < NUM_MD_SESSIONS; i++)
 		if (MD_PERIPHERAL_MASK(i) & session_peripheral_mask)
 			diag_mux_close_peripheral(DIAG_LOCAL_PROC, i);
@@ -609,9 +606,8 @@ int diag_cmd_chk_polling(struct diag_cmd_reg_entry_t *entry)
 {
 	int polling = DIAG_CMD_NOT_POLLING;
 
-	if (!entry) {
+	if (!entry)
 		return -EIO;
-	}
 
 	if (entry->cmd_code == DIAG_CMD_NO_SUBSYS) {
 		if (entry->subsys_id == DIAG_CMD_NO_SUBSYS &&
@@ -645,12 +641,10 @@ static void diag_cmd_invalidate_polling(int change_flag)
 	struct list_head *start;
 	struct list_head *temp;
 	struct diag_cmd_reg_t *item = NULL;
+
 	if (change_flag == DIAG_CMD_ADD) {
-		if (driver->polling_reg_flag) {
-			DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
-				" exiting function %s", __func__);
+		if (driver->polling_reg_flag)
 			return;
-		}
 	}
 
 	driver->polling_reg_flag = 0;
@@ -1949,15 +1943,6 @@ static int diag_ioctl_hdlc_toggle(unsigned long ioarg)
 	return 0;
 }
 
-static int diag_ioctl_md_support_list(unsigned long ioarg)
-{
-	if (copy_to_user((void __user *)ioarg, &md_support,
-			sizeof(md_support)))
-		return -EFAULT;
-	else
-		return 0;
-}
-
 static int diag_ioctl_register_callback(unsigned long ioarg)
 {
 	int err = 0;
@@ -2197,9 +2182,6 @@ long diagchar_compat_ioctl(struct file *filp,
 	case DIAG_IOCTL_HDLC_TOGGLE:
 		result = diag_ioctl_hdlc_toggle(ioarg);
 		break;
-	case DIAG_IOCTL_MD_SUPPORT_LIST:
-		result = diag_ioctl_md_support_list(ioarg);
-		break;
 	}
 	return result;
 }
@@ -2324,9 +2306,6 @@ long diagchar_ioctl(struct file *filp,
 		break;
 	case DIAG_IOCTL_HDLC_TOGGLE:
 		result = diag_ioctl_hdlc_toggle(ioarg);
-		break;
-	case DIAG_IOCTL_MD_SUPPORT_LIST:
-		result = diag_ioctl_md_support_list(ioarg);
 		break;
 	}
 	return result;

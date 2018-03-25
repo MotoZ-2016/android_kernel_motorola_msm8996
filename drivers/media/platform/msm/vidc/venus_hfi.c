@@ -27,7 +27,6 @@
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 #include <linux/workqueue.h>
-#include <linux/vmalloc.h>
 #include <soc/qcom/scm.h>
 #include <soc/qcom/smem.h>
 #include <soc/qcom/subsystem_restart.h>
@@ -1148,21 +1147,6 @@ static struct clock_info *__get_clock(struct venus_hfi_device *device,
 	}
 
 	dprintk(VIDC_WARN, "%s Clock %s not found\n", __func__, name);
-
-	return NULL;
-}
-
-static struct regulator_info *__get_regulator(struct venus_hfi_device *device,
-			char *name)
-{
-	struct regulator_info *r;
-
-	venus_hfi_for_each_regulator(device, r) {
-		if (!strcmp(r->name, name))
-			return r;
-	}
-
-	dprintk(VIDC_WARN, "%s Regulator %s not found\n", __func__, name);
 
 	return NULL;
 }
@@ -3369,11 +3353,7 @@ static void __flush_debug_queue(struct venus_hfi_device *device, u8 *packet)
 	}
 
 	if (!packet) {
-		if (VIDC_IFACEQ_VAR_HUGE_PKT_SIZE > PAGE_SIZE)
-			packet = vzalloc(VIDC_IFACEQ_VAR_HUGE_PKT_SIZE);
-		else
-			packet = kzalloc(VIDC_IFACEQ_VAR_HUGE_PKT_SIZE,
-					GFP_TEMPORARY);
+		packet = kzalloc(VIDC_IFACEQ_VAR_HUGE_PKT_SIZE, GFP_TEMPORARY);
 		if (!packet) {
 			dprintk(VIDC_ERR, "In %s() Fail to allocate mem\n",
 				__func__);
@@ -3402,7 +3382,7 @@ static void __flush_debug_queue(struct venus_hfi_device *device, u8 *packet)
 	}
 
 	if (local_packet)
-		kvfree(packet);
+		kfree(packet);
 }
 
 static struct hal_session *__get_session(struct venus_hfi_device *device,
@@ -3430,14 +3410,10 @@ static int __response_handler(struct venus_hfi_device *device)
 
 	packets = device->response_pkt;
 
-	if (VIDC_IFACEQ_VAR_HUGE_PKT_SIZE > PAGE_SIZE)
-		raw_packet = vzalloc(VIDC_IFACEQ_VAR_HUGE_PKT_SIZE);
-	else
-		raw_packet = kzalloc(VIDC_IFACEQ_VAR_HUGE_PKT_SIZE,
-				GFP_TEMPORARY);
+	raw_packet = kzalloc(VIDC_IFACEQ_VAR_HUGE_PKT_SIZE, GFP_TEMPORARY);
 	if (!raw_packet || !packets) {
 		dprintk(VIDC_ERR, "%s: Failed to allocate memory\n",  __func__);
-		kvfree(raw_packet);
+		kfree(raw_packet);
 		return 0;
 	}
 
@@ -3599,7 +3575,7 @@ static int __response_handler(struct venus_hfi_device *device)
 exit:
 	__flush_debug_queue(device, raw_packet);
 
-	kvfree(raw_packet);
+	kfree(raw_packet);
 	return packet_count;
 }
 
@@ -4125,57 +4101,10 @@ static int __enable_hw_power_collapse(struct venus_hfi_device *device)
 	return rc;
 }
 
-static int __core_clk_reset(struct venus_hfi_device *device,
-				enum clk_reset_action action)
-{
-	int rc = 0;
-	struct regulator_info *rinfo;
-	struct clock_info *vc;
-
-	rinfo = __get_regulator(device, "venus");
-	if (!rinfo)
-		return -EINVAL;
-
-	/*
-	 * This is a workaround for msm8996 V2, because MDP enables
-	 * Venus GDSC. Due to MDP's vote on Venus GDSC, some of Venus
-	 * registers are not cleared after firmware is unloaded. This
-	 * causes subsequent video sessions to fail. By resetting
-	 * core_clk we are forcing a hard reset and ensure each
-	 * firmware load starts on a clean slate.
-	 * For targets which do not need to reset the core_clk, clock
-	 * driver returns -EPERM. Do not consider such cases as erroneous.
-	 */
-	dprintk(VIDC_DBG, "%s core-clk\n",
-		action == CLK_RESET_DEASSERT ? "de-assert" : "assert");
-	vc = __get_clock(device, "core_clk");
-	if (vc) {
-		rc = clk_reset(vc->clk, action);
-		if (rc == -EPERM) {
-			rc = 0;
-			dprintk(VIDC_DBG, "%s No need to reset\n", __func__);
-		} else if (rc) {
-			dprintk(VIDC_ERR,
-				"clk_reset action - %d failed: %d\n",
-				action, rc);
-			return rc;
-		}
-	} else {
-		return -EINVAL;
-	}
-	udelay(1);
-	return rc;
-}
-
 static int __enable_regulators(struct venus_hfi_device *device)
 {
 	int rc = 0, c = 0;
 	struct regulator_info *rinfo;
-
-	rc = __core_clk_reset(device, CLK_RESET_DEASSERT);
-	if (rc)
-		return rc;
-
 
 	dprintk(VIDC_DBG, "Enabling regulators\n");
 
@@ -4211,8 +4140,6 @@ static int __disable_regulators(struct venus_hfi_device *device)
 
 	venus_hfi_for_each_regulator_reverse(device, rinfo)
 		__disable_regulator(rinfo);
-
-	rc = __core_clk_reset(device, CLK_RESET_ASSERT);
 
 	return rc;
 }
@@ -4482,14 +4409,6 @@ static void __unload_fw(struct venus_hfi_device *device)
 		flush_workqueue(device->venus_pm_workq);
 
 	__vote_buses(device, NULL, 0);
-	/*
-	 * If the core_clk is asserted, then PIL cannot enable
-	 * any of the venus clocks. So deassert the clock before
-	 * calling subsystem_put.
-	 */
-	if (__core_clk_reset(device, CLK_RESET_DEASSERT))
-		dprintk(VIDC_ERR, "failed to deassert core_clk\n");
-
 	subsystem_put(device->resources.fw.cookie);
 	__interface_queues_release(device);
 	__venus_power_off(device, false);

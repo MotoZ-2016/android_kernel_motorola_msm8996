@@ -830,7 +830,7 @@ int rmnet_associate_network_device(struct net_device *dev)
 		return RMNET_CONFIG_INVALID_REQUEST;
 	}
 
-	config = kmalloc(sizeof(*config), GFP_KERNEL);
+	config = kmalloc(sizeof(*config), GFP_ATOMIC);
 
 	if (!config)
 		return RMNET_CONFIG_NOMEM;

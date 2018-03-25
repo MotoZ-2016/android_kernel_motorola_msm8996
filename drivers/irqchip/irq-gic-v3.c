@@ -28,7 +28,6 @@
 
 #include <linux/irqchip/arm-gic-v3.h>
 #include <linux/syscore_ops.h>
-#include <linux/wakeup_reason.h>
 
 #include <asm/cputype.h>
 #include <asm/exception.h>
@@ -386,7 +385,7 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		else if (desc->action && desc->action->name)
 			name = desc->action->name;
 
-		log_base_wakeup_reason(irq);
+		pr_warn("%s: %d triggered %s\n", __func__, irq, name);
 	}
 }
 

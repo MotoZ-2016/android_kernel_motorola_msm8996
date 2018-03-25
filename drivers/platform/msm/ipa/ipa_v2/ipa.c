@@ -74,8 +74,6 @@
 
 #define IPA_SPS_PROD_TIMEOUT_MSEC 100
 
-#define IPA_MAX_RX_POOL_SZ 1000
-
 #ifdef CONFIG_COMPAT
 #define IPA_IOC_ADD_HDR32 _IOWR(IPA_IOC_MAGIC, \
 					IPA_IOCTL_ADD_HDR, \
@@ -184,10 +182,6 @@ struct ipa_ioc_nat_alloc_mem32 {
 	compat_off_t offset;
 };
 #endif
-
-static unsigned int ipa_rx_ring_sz;
-module_param(ipa_rx_ring_sz, uint, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(ipa_rx_ring_sz, "Override IPA RX Ring Size");
 
 static void ipa_start_tag_process(struct work_struct *work);
 static DECLARE_WORK(ipa_tag_work, ipa_start_tag_process);
@@ -538,11 +532,13 @@ static void ipa_wan_msg_free_cb(void *buff, u32 len, u32 type)
 	kfree(buff);
 }
 
-static int ipa_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
+static int ipa_send_wan_msg(unsigned long usr_param,
+			uint8_t msg_type, bool is_cache)
 {
 	int retval;
 	struct ipa_wan_msg *wan_msg;
 	struct ipa_msg_meta msg_meta;
+	struct ipa_wan_msg cache_wan_msg;
 
 	wan_msg = kzalloc(sizeof(struct ipa_wan_msg), GFP_KERNEL);
 	if (!wan_msg) {
@@ -556,6 +552,8 @@ static int ipa_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
 		return -EFAULT;
 	}
 
+	memcpy(&cache_wan_msg, wan_msg, sizeof(cache_wan_msg));
+
 	memset(&msg_meta, 0, sizeof(struct ipa_msg_meta));
 	msg_meta.msg_type = msg_type;
 	msg_meta.msg_len = sizeof(struct ipa_wan_msg);
@@ -564,6 +562,25 @@ static int ipa_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
 		IPAERR("ipa2_send_msg failed: %d\n", retval);
 		kfree(wan_msg);
 		return retval;
+	}
+
+	if (is_cache) {
+		mutex_lock(&ipa_ctx->ipa_cne_evt_lock);
+
+		/* cache the cne event */
+		memcpy(&ipa_ctx->ipa_cne_evt_req_cache[
+			ipa_ctx->num_ipa_cne_evt_req].wan_msg,
+			&cache_wan_msg,
+			sizeof(cache_wan_msg));
+
+		memcpy(&ipa_ctx->ipa_cne_evt_req_cache[
+			ipa_ctx->num_ipa_cne_evt_req].msg_meta,
+			&msg_meta,
+			sizeof(struct ipa_msg_meta));
+
+		ipa_ctx->num_ipa_cne_evt_req++;
+		ipa_ctx->num_ipa_cne_evt_req %= IPA_MAX_NUM_REQ_CACHE;
+		mutex_unlock(&ipa_ctx->ipa_cne_evt_lock);
 	}
 
 	return 0;
@@ -1335,21 +1352,21 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_UPSTREAM_ROUTE_ADD:
-		retval = ipa_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_ADD);
+		retval = ipa_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_ADD, true);
 		if (retval) {
 			IPAERR("ipa_send_wan_msg failed: %d\n", retval);
 			break;
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_UPSTREAM_ROUTE_DEL:
-		retval = ipa_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_DEL);
+		retval = ipa_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_DEL, true);
 		if (retval) {
 			IPAERR("ipa_send_wan_msg failed: %d\n", retval);
 			break;
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_EMBMS_CONNECTED:
-		retval = ipa_send_wan_msg(arg, WAN_EMBMS_CONNECT);
+		retval = ipa_send_wan_msg(arg, WAN_EMBMS_CONNECT, false);
 		if (retval) {
 			IPAERR("ipa_send_wan_msg failed: %d\n", retval);
 			break;
@@ -4186,6 +4203,7 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 
 	mutex_init(&ipa_ctx->lock);
 	mutex_init(&ipa_ctx->nat_mem.lock);
+	mutex_init(&ipa_ctx->ipa_cne_evt_lock);
 
 	idr_init(&ipa_ctx->ipa_idr);
 	spin_lock_init(&ipa_ctx->idr_lock);
@@ -4485,12 +4503,6 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 	else
 		IPADBG(": found ipa_drv_res->lan-rx-ring-size = %u",
 				ipa_drv_res->lan_rx_ring_size);
-
-	if (ipa_rx_ring_sz  && ipa_rx_ring_sz <= IPA_MAX_RX_POOL_SZ) {
-		ipa_drv_res->lan_rx_ring_size = ipa_rx_ring_sz;
-		ipa_drv_res->wan_rx_ring_size = ipa_rx_ring_sz;
-		IPAERR("Override IPA RX Ring Size with %u\n", ipa_rx_ring_sz);
-	}
 
 	ipa_drv_res->use_ipa_teth_bridge =
 			of_property_read_bool(pdev->dev.of_node,

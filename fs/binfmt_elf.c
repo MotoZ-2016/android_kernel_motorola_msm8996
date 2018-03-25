@@ -38,9 +38,6 @@
 #include <asm/uaccess.h>
 #include <asm/param.h>
 #include <asm/page.h>
-#ifdef CONFIG_COREDUMP_GZ
-#include "coredump_gz.h"
-#endif
 
 #ifndef user_long_t
 #define user_long_t long
@@ -562,7 +559,7 @@ static unsigned long randomize_stack_top(unsigned long stack_top)
 
 	if ((current->flags & PF_RANDOMIZE) &&
 		!(current->personality & ADDR_NO_RANDOMIZE)) {
-		random_variable = get_random_long();
+		random_variable = (unsigned long) get_random_int();
 		random_variable &= STACK_RND_MASK;
 		random_variable <<= PAGE_SHIFT;
 	}
@@ -2027,7 +2024,6 @@ static int elf_core_dump(struct coredump_params *cprm)
 	struct elf_shdr *shdr4extnum = NULL;
 	Elf_Half e_phnum;
 	elf_addr_t e_shoff;
-	int page_padding_num;
 
 	/*
 	 * We no longer stop all VM operations.
@@ -2075,9 +2071,6 @@ static int elf_core_dump(struct coredump_params *cprm)
 
 	fs = get_fs();
 	set_fs(KERNEL_DS);
-
-	if (!dump_init(cprm))
-		goto end_coredump;
 
 	offset += sizeof(*elf);				/* Elf header */
 	offset += segs * sizeof(struct elf_phdr);	/* Program headers */
@@ -2151,13 +2144,7 @@ static int elf_core_dump(struct coredump_params *cprm)
 		goto end_coredump;
 
 	/* Align to page */
-	page_padding_num = dataoff - cprm->written;
-#ifdef CONFIG_COREDUMP_GZ
-	/* For compressing in kernel, re-write the padding zero nums */
-	if (dump_compressed(cprm))
-		page_padding_num = dataoff - cprm->zstr.total_in;
-#endif
-	if (!dump_skip(cprm, page_padding_num))
+	if (!dump_skip(cprm, dataoff - cprm->written))
 		goto end_coredump;
 
 	for (vma = first_vma(current, gate_vma); vma != NULL;
@@ -2193,7 +2180,6 @@ static int elf_core_dump(struct coredump_params *cprm)
 	}
 
 end_coredump:
-	dump_finish(cprm);
 	set_fs(fs);
 
 cleanup:

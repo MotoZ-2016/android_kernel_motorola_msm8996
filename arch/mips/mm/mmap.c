@@ -146,7 +146,7 @@ unsigned long arch_mmap_rnd(void)
 {
 	unsigned long rnd;
 
-	rnd = get_random_long();
+	rnd = (unsigned long)get_random_int();
 	rnd <<= PAGE_SHIFT;
 	if (TASK_IS_32BIT_ADDR)
 		rnd &= 0xfffffful;

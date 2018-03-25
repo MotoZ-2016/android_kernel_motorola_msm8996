@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -508,12 +508,12 @@ int sps_bam_enable(struct sps_bam *dev)
 		if (dev->props.logging_number > 0)
 			dev->props.logging_number--;
 		SPS_INFO(dev,
-			"sps:BAM %pa (va:0x%p) enabled: ver:0x%x, number of pipes:%d\n",
+			"sps:BAM %pa (va:0x%pK) enabled: ver:0x%x, number of pipes:%d\n",
 			BAM_ID(dev), dev->base, dev->version,
 			dev->props.num_pipes);
 	} else
 		SPS_DBG3(dev,
-			"sps:BAM %pa (va:0x%p) enabled: ver:0x%x, number of pipes:%d\n",
+			"sps:BAM %pa (va:0x%pK) enabled: ver:0x%x, number of pipes:%d\n",
 			BAM_ID(dev), dev->base, dev->version,
 			dev->props.num_pipes);
 
@@ -819,7 +819,6 @@ int sps_bam_pipe_connect(struct sps_pipe *bam_pipe,
 	void *desc_buf = NULL;
 	u32 pipe_index;
 	int result;
-	unsigned long flags = 0;
 
 	/* Clear the client pipe state and hw init struct */
 	pipe_clear(bam_pipe);
@@ -1055,7 +1054,6 @@ int sps_bam_pipe_connect(struct sps_pipe *bam_pipe,
 	}
 
 	/* Indicate initialization is complete */
-	spin_lock_irqsave(&dev->isr_lock, flags);
 	dev->pipes[pipe_index] = bam_pipe;
 	dev->pipe_active_mask |= 1UL << pipe_index;
 	list_add_tail(&bam_pipe->list, &dev->pipes_q);
@@ -1066,7 +1064,6 @@ int sps_bam_pipe_connect(struct sps_pipe *bam_pipe,
 		bam_pipe->pipe_index_mask, dev->pipe_active_mask);
 
 	bam_pipe->state |= BAM_STATE_INIT;
-	spin_unlock_irqrestore(&dev->isr_lock, flags);
 	result = 0;
 exit_err:
 	if (result) {
@@ -2137,7 +2134,7 @@ int sps_bam_pipe_get_event(struct sps_bam *dev,
 
 	if (pipe->sys.no_queue) {
 		SPS_ERR(dev,
-			"sps:Invalid connection for event: BAM %pa pipe %d context 0x%p\n",
+			"sps:Invalid connection for event: BAM %pa pipe %d context 0x%pK\n",
 			BAM_ID(dev), pipe_index, pipe);
 		notify->event_id = SPS_EVENT_INVALID;
 		return SPS_ERROR;

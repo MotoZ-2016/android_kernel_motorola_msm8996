@@ -116,7 +116,7 @@ config ARM_ARCH_TIMER_VCT_ACCESS
 	depends on ARM_ARCH_TIMER
 	help
 	  This option enables support for reading the ARM architected timer's
-	  virtual counter in userspace
+	  virtual counter in userspace.
 
 config ARM_GLOBAL_TIMER
 	bool

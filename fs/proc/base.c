@@ -903,9 +903,7 @@ static ssize_t oom_adj_write(struct file *file, const char __user *buf,
 		  current->comm, task_pid_nr(current), task_pid_nr(task),
 		  task_pid_nr(task));
 
-	delete_from_adj_tree(task);
 	task->signal->oom_score_adj = oom_adj;
-	add_2_adj_tree(task);
 	trace_oom_score_adj_update(task);
 err_sighand:
 	unlock_task_sighand(task, &flags);
@@ -991,10 +989,7 @@ static ssize_t oom_score_adj_write(struct file *file, const char __user *buf,
 		goto err_sighand;
 	}
 
-	delete_from_adj_tree(task);
 	task->signal->oom_score_adj = (short)oom_score_adj;
-	add_2_adj_tree(task);
-
 	if (has_capability_noaudit(current, CAP_SYS_RESOURCE))
 		task->signal->oom_score_adj_min = (short)oom_score_adj;
 	trace_oom_score_adj_update(task);
@@ -2766,7 +2761,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_SCHED_HMP
 	REG("sched_init_task_load",      S_IRUGO|S_IWUSR, proc_pid_sched_init_task_load_operations),
 #ifndef CONFIG_SCHED_QHMP
-	REG("sched_group_id",      S_IRUGO|S_IWUSR, proc_pid_sched_group_id_operations),
+	REG("sched_group_id",      S_IRUGO|S_IWUGO, proc_pid_sched_group_id_operations),
 #endif
 #endif
 #ifdef CONFIG_SCHED_DEBUG
@@ -2808,7 +2803,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("wchan",      S_IRUGO, proc_pid_wchan),
 #endif
 #ifdef CONFIG_STACKTRACE
-	ONE("stack",      S_IRUGO, proc_pid_stack),
+	ONE("stack",      S_IRUSR, proc_pid_stack),
 #endif
 #ifdef CONFIG_SCHEDSTATS
 	ONE("schedstat",  S_IRUGO, proc_pid_schedstat),
@@ -3193,7 +3188,7 @@ static const struct pid_entry tid_base_stuff[] = {
 	ONE("wchan",     S_IRUGO, proc_pid_wchan),
 #endif
 #ifdef CONFIG_STACKTRACE
-	ONE("stack",      S_IRUGO, proc_pid_stack),
+	ONE("stack",      S_IRUSR, proc_pid_stack),
 #endif
 #ifdef CONFIG_SCHEDSTATS
 	ONE("schedstat", S_IRUGO, proc_pid_schedstat),

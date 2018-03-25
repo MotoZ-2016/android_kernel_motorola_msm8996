@@ -16,6 +16,7 @@
 #include <linux/types.h>
 #endif
 
+#include "input-event-codes.h"
 
 /*
  * The event structure itself

@@ -99,8 +99,6 @@
 /* The relative location in /lib/firmware where the FWs will reside */
 #define IPA_FWS_PATH "ipa/ipa_fws.elf"
 
-#define IPA_MAX_RX_POOL_SZ 1000
-
 #ifdef CONFIG_COMPAT
 #define IPA_IOC_ADD_HDR32 _IOWR(IPA_IOC_MAGIC, \
 					IPA_IOCTL_ADD_HDR, \
@@ -242,10 +240,6 @@ struct tz_smmu_ipa_protect_region_s {
 	phys_addr_t iovec_buf;
 	u32 size_bytes;
 } __packed;
-
-static unsigned int ipa_rx_ring_sz;
-module_param(ipa_rx_ring_sz, uint, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(ipa_rx_ring_sz, "Override IPA RX Ring Size");
 
 static void ipa3_start_tag_process(struct work_struct *work);
 static DECLARE_WORK(ipa3_tag_work, ipa3_start_tag_process);
@@ -604,11 +598,13 @@ static void ipa3_wan_msg_free_cb(void *buff, u32 len, u32 type)
 	kfree(buff);
 }
 
-static int ipa3_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
+static int ipa3_send_wan_msg(unsigned long usr_param,
+			uint8_t msg_type, bool is_cache)
 {
 	int retval;
 	struct ipa_wan_msg *wan_msg;
 	struct ipa_msg_meta msg_meta;
+	struct ipa_wan_msg cache_wan_msg;
 
 	wan_msg = kzalloc(sizeof(struct ipa_wan_msg), GFP_KERNEL);
 	if (!wan_msg) {
@@ -622,6 +618,8 @@ static int ipa3_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
 		return -EFAULT;
 	}
 
+	memcpy(&cache_wan_msg, wan_msg, sizeof(cache_wan_msg));
+
 	memset(&msg_meta, 0, sizeof(struct ipa_msg_meta));
 	msg_meta.msg_type = msg_type;
 	msg_meta.msg_len = sizeof(struct ipa_wan_msg);
@@ -630,6 +628,25 @@ static int ipa3_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
 		IPAERR("ipa3_send_msg failed: %d\n", retval);
 		kfree(wan_msg);
 		return retval;
+	}
+
+	if (is_cache) {
+		mutex_lock(&ipa3_ctx->ipa_cne_evt_lock);
+
+		/* cache the cne event */
+		memcpy(&ipa3_ctx->ipa_cne_evt_req_cache[
+			ipa3_ctx->num_ipa_cne_evt_req].wan_msg,
+			&cache_wan_msg,
+			sizeof(cache_wan_msg));
+
+		memcpy(&ipa3_ctx->ipa_cne_evt_req_cache[
+			ipa3_ctx->num_ipa_cne_evt_req].msg_meta,
+			&msg_meta,
+			sizeof(struct ipa_msg_meta));
+
+		ipa3_ctx->num_ipa_cne_evt_req++;
+		ipa3_ctx->num_ipa_cne_evt_req %= IPA_MAX_NUM_REQ_CACHE;
+		mutex_unlock(&ipa3_ctx->ipa_cne_evt_lock);
 	}
 
 	return 0;
@@ -1652,21 +1669,21 @@ static long ipa3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_UPSTREAM_ROUTE_ADD:
-		retval = ipa3_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_ADD);
+		retval = ipa3_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_ADD, true);
 		if (retval) {
 			IPAERR("ipa3_send_wan_msg failed: %d\n", retval);
 			break;
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_UPSTREAM_ROUTE_DEL:
-		retval = ipa3_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_DEL);
+		retval = ipa3_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_DEL, true);
 		if (retval) {
 			IPAERR("ipa3_send_wan_msg failed: %d\n", retval);
 			break;
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_EMBMS_CONNECTED:
-		retval = ipa3_send_wan_msg(arg, WAN_EMBMS_CONNECT);
+		retval = ipa3_send_wan_msg(arg, WAN_EMBMS_CONNECT, false);
 		if (retval) {
 			IPAERR("ipa3_send_wan_msg failed: %d\n", retval);
 			break;
@@ -2074,6 +2091,12 @@ static void ipa3_q6_avoid_holb(void)
 			if (ep_idx == -1)
 				continue;
 
+			/* from IPA 4.0 pipe suspend is not supported */
+			if (ipa3_ctx->ipa_hw_type < IPA_HW_v4_0)
+				ipahal_write_reg_n_fields(
+				IPA_ENDP_INIT_CTRL_n,
+				ep_idx, &ep_suspend);
+
 			/*
 			 * ipa3_cfg_ep_holb is not used here because we are
 			 * setting HOLB on Q6 pipes, and from APPS perspective
@@ -2086,10 +2109,6 @@ static void ipa3_q6_avoid_holb(void)
 			ipahal_write_reg_n_fields(
 				IPA_ENDP_INIT_HOL_BLOCK_EN_n,
 				ep_idx, &ep_holb);
-
-			ipahal_write_reg_n_fields(
-				IPA_ENDP_INIT_CTRL_n,
-				ep_idx, &ep_suspend);
 		}
 	}
 }
@@ -5146,6 +5165,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 	mutex_init(&ipa3_ctx->lock);
 	mutex_init(&ipa3_ctx->nat_mem.lock);
 	mutex_init(&ipa3_ctx->q6_proxy_clk_vote_mutex);
+	mutex_init(&ipa3_ctx->ipa_cne_evt_lock);
 
 	idr_init(&ipa3_ctx->ipa_idr);
 	spin_lock_init(&ipa3_ctx->idr_lock);
@@ -5437,12 +5457,6 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 	else
 		IPADBG(": found ipa_drv_res->lan-rx-ring-size = %u",
 			ipa_drv_res->lan_rx_ring_size);
-
-	if (ipa_rx_ring_sz  && ipa_rx_ring_sz <= IPA_MAX_RX_POOL_SZ) {
-		ipa_drv_res->lan_rx_ring_size = ipa_rx_ring_sz;
-		ipa_drv_res->wan_rx_ring_size = ipa_rx_ring_sz;
-		IPAERR("Override IPA RX Ring Size with %u\n", ipa_rx_ring_sz);
-	}
 
 	ipa_drv_res->use_ipa_teth_bridge =
 			of_property_read_bool(pdev->dev.of_node,

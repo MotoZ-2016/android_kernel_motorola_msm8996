@@ -63,8 +63,6 @@ struct dm_verity {
 	sector_t hash_level_block[DM_VERITY_MAX_LEVELS];
 
 	struct dm_verity_fec *fec;	/* forward error correction */
-	unsigned long *verified_cache;
-	struct timer_list cache_timeout;
 };
 
 struct dm_verity_io {

@@ -50,7 +50,6 @@ dlink	D-Link Corporation
 dmo	Data Modul AG
 ebv	EBV Elektronik
 edt	Emerging Display Technologies
-egistec Egis Technology Inc
 emmicro	EM Microelectronic
 energymicro	Silicon Laboratories (formerly Energy Micro AS)
 epcos	EPCOS AG
@@ -63,7 +62,6 @@ excito	Excito
 fcs	Fairchild Semiconductor
 fairchild	Fairchild Semiconductor International, Inc.
 focaltech	Focaltech systems
-fpc	Fingerprint Cards
 fsl	Freescale Semiconductor
 GEFanuc	GE Fanuc Intelligent Platforms Embedded Systems, Inc.
 goodix	Goodix. Ltd.
@@ -115,10 +113,8 @@ memsic	MEMSIC, Inc
 microchip	Microchip Technology Inc.
 micron	Micron Technology Inc.
 mitsubishi	Mitsubishi Electric Corporation
-mmi	Motorola Mobility LLC (formerly Motorola Mobility, Inc)
 mosaixtech	Mosaix Technologies, Inc.
 moxa	Moxa
-motosh  Motorola Sensorhub
 mpl	MPL AG
 mundoreader	Mundo Reader S.L.
 murata	Murata Manufacturing Co., Ltd.
@@ -181,7 +177,6 @@ spansion	Spansion Inc.
 st	STMicroelectronics
 ste	ST-Ericsson
 stericsson	ST-Ericsson
-stm     STMicroelectronics
 synaptics	Synaptics, Inc.
 synology	Synology, Inc.
 thine	THine Electronics, Inc.
@@ -205,5 +200,3 @@ zyxel	ZyXEL Communications Corp.
 zarlink	Zarlink Semiconductor
 bosch-sensortec»    Bosch Sensortec GmbH
 lontium Lontium Semiconductor
-mx	MagnaChip Semiconductor Ltd.
-semtech Semtech Corporation
