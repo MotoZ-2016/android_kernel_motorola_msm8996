@@ -63,11 +63,18 @@ static struct tk_fast tk_fast_mono ____cacheline_aligned;
 /* flag for if timekeeping is suspended */
 int __read_mostly timekeeping_suspended;
 
+/* Flag for if there is a persistent clock on this platform */
+bool __read_mostly persistent_clock_exist = false;
+
 static inline void tk_normalize_xtime(struct timekeeper *tk)
 {
 	while (tk->tkr_mono.xtime_nsec >= ((u64)NSEC_PER_SEC << tk->tkr_mono.shift)) {
 		tk->tkr_mono.xtime_nsec -= (u64)NSEC_PER_SEC << tk->tkr_mono.shift;
 		tk->xtime_sec++;
+	}
+	while (tk->tkr_raw.xtime_nsec >= ((u64)NSEC_PER_SEC << tk->tkr_raw.shift)) {
+		tk->tkr_raw.xtime_nsec -= (u64)NSEC_PER_SEC << tk->tkr_raw.shift;
+		tk->raw_sec++;
 	}
 }
 
@@ -158,18 +165,19 @@ static void tk_setup_internals(struct timekeeper *tk, struct clocksource *clock)
 	/* Go back from cycles -> shifted ns */
 	tk->xtime_interval = (u64) interval * clock->mult;
 	tk->xtime_remainder = ntpinterval - tk->xtime_interval;
-	tk->raw_interval =
-		((u64) interval * clock->mult) >> clock->shift;
+	tk->raw_interval = interval * clock->mult;
 
 	 /* if changing clocks, convert xtime_nsec shift units */
 	if (old_clock) {
 		int shift_change = clock->shift - old_clock->shift;
-		if (shift_change < 0)
+		if (shift_change < 0) {
 			tk->tkr_mono.xtime_nsec >>= -shift_change;
-		else
+			tk->tkr_raw.xtime_nsec >>= -shift_change;
+		} else {
 			tk->tkr_mono.xtime_nsec <<= shift_change;
+			tk->tkr_raw.xtime_nsec <<= shift_change;
+		}
 	}
-	tk->tkr_raw.xtime_nsec = 0;
 
 	tk->tkr_mono.shift = clock->shift;
 	tk->tkr_raw.shift = clock->shift;
@@ -418,7 +426,7 @@ static inline void tk_update_ktime_data(struct timekeeper *tk)
 	tk->tkr_mono.base = ns_to_ktime(nsec);
 
 	/* Update the monotonic raw base */
-	tk->tkr_raw.base = timespec64_to_ktime(tk->raw_time);
+	tk->tkr_raw.base = ns_to_ktime(tk->raw_sec * NSEC_PER_SEC);
 }
 
 /* must hold timekeeper_lock */
@@ -452,7 +460,6 @@ static void timekeeping_forward_now(struct timekeeper *tk)
 {
 	struct clocksource *clock = tk->tkr_mono.clock;
 	cycle_t cycle_now, delta;
-	s64 nsec;
 
 	cycle_now = tk->tkr_mono.read(clock);
 	delta = clocksource_delta(cycle_now, tk->tkr_mono.cycle_last, tk->tkr_mono.mask);
@@ -464,10 +471,13 @@ static void timekeeping_forward_now(struct timekeeper *tk)
 	/* If arch requires, add in get_arch_timeoffset() */
 	tk->tkr_mono.xtime_nsec += (u64)arch_gettimeoffset() << tk->tkr_mono.shift;
 
-	tk_normalize_xtime(tk);
 
-	nsec = clocksource_cyc2ns(delta, tk->tkr_raw.mult, tk->tkr_raw.shift);
-	timespec64_add_ns(&tk->raw_time, nsec);
+	tk->tkr_raw.xtime_nsec += delta * tk->tkr_raw.mult;
+
+	/* If arch requires, add in get_arch_timeoffset() */
+	tk->tkr_raw.xtime_nsec += (u64)arch_gettimeoffset() << tk->tkr_raw.shift;
+
+	tk_normalize_xtime(tk);
 }
 
 /**
@@ -762,7 +772,7 @@ int timekeeping_inject_offset(struct timespec *ts)
 	/* Make sure the proposed value is valid */
 	tmp = timespec64_add(tk_xtime(tk),  ts64);
 	if (timespec64_compare(&tk->wall_to_monotonic, &ts64) > 0 ||
-	    !timespec64_valid_strict(&tmp)) {
+		!timespec64_valid_strict(&tmp)) {
 		ret = -EINVAL;
 		goto error;
 	}
@@ -903,11 +913,12 @@ void getrawmonotonic(struct timespec *ts)
 
 	do {
 		seq = read_seqcount_begin(&tk_core.seq);
+		ts64.tv_sec = tk->raw_sec;
 		nsecs = timekeeping_get_ns(&tk->tkr_raw);
-		ts64 = tk->raw_time;
 
 	} while (read_seqcount_retry(&tk_core.seq, seq));
 
+	ts64.tv_nsec = 0;
 	timespec64_add_ns(&ts64, nsecs);
 	*ts = timespec64_to_timespec(ts64);
 }
@@ -981,12 +992,6 @@ void __weak read_boot_clock(struct timespec *ts)
 	ts->tv_nsec = 0;
 }
 
-/* Flag for if timekeeping_resume() has injected sleeptime */
-static bool sleeptime_injected;
-
-/* Flag for if there is a persistent clock on this platform */
-static bool persistent_clock_exists;
-
 /*
  * timekeeping_init - Initializes the clocksource and common timekeeping values
  */
@@ -1006,7 +1011,7 @@ void __init timekeeping_init(void)
 		now.tv_sec = 0;
 		now.tv_nsec = 0;
 	} else if (now.tv_sec || now.tv_nsec)
-		persistent_clock_exists = true;
+		persistent_clock_exist = true;
 
 	read_boot_clock(&ts);
 	boot = timespec_to_timespec64(ts);
@@ -1027,8 +1032,7 @@ void __init timekeeping_init(void)
 	tk_setup_internals(tk, clock);
 
 	tk_set_xtime(tk, &now);
-	tk->raw_time.tv_sec = 0;
-	tk->raw_time.tv_nsec = 0;
+	tk->raw_sec = 0;
 	if (boot.tv_sec == 0 && boot.tv_nsec == 0)
 		boot = tk_xtime(tk);
 
@@ -1041,7 +1045,7 @@ void __init timekeeping_init(void)
 	raw_spin_unlock_irqrestore(&timekeeper_lock, flags);
 }
 
-/* time in seconds when suspend began for persistent clock */
+/* time in seconds when suspend began */
 static struct timespec64 timekeeping_suspend_time;
 
 /**
@@ -1067,47 +1071,11 @@ static void __timekeeping_inject_sleeptime(struct timekeeper *tk,
 }
 
 /**
- * We have three kinds of time sources to use for sleep time
- * injection, the preference order is:
- * 1) non-stop clocksource
- * 2) persistent clock (ie: RTC accessible when irqs are off)
- * 3) RTC
- *
- * 1) and 2) are used by timekeeping, 3) by RTC subsystem.
- * If system has neither 1) nor 2), 3) will be used finally.
- *
- *
- * If timekeeping has injected sleeptime via either 1) or 2),
- * 3) becomes needless, so in this case we don't need to call
- * rtc_resume(), and this is what timekeeping_rtc_skipresume()
- * means.
- */
-bool timekeeping_rtc_skipresume(void)
-{
-	return sleeptime_injected;
-}
-
-/**
- * 1) can be determined whether to use or not only when doing
- * timekeeping_resume() which is invoked after rtc_suspend(),
- * so we can't skip rtc_suspend() surely if system has 1).
- *
- * But if system has 2), 2) will definitely be used, so in this
- * case we don't need to call rtc_suspend(), and this is what
- * timekeeping_rtc_skipsuspend() means.
- */
-bool timekeeping_rtc_skipsuspend(void)
-{
-	return persistent_clock_exists;
-}
-
-/**
  * timekeeping_inject_sleeptime - Adds suspend interval to timeekeeping values
  * @delta: pointer to a timespec delta value
  *
  * This hook is for architectures that cannot support read_persistent_clock
  * because their RTC/persistent clock is only accessible when irqs are enabled.
- * and also don't have an effective nonstop clocksource.
  *
  * This function should only be called by rtc_resume(), and allows
  * a suspend offset to be injected into the timekeeping values.
@@ -1117,6 +1085,13 @@ void timekeeping_inject_sleeptime(struct timespec *delta)
 	struct timekeeper *tk = &tk_core.timekeeper;
 	struct timespec64 tmp;
 	unsigned long flags;
+
+	/*
+	 * Make sure we don't set the clock twice, as timekeeping_resume()
+	 * already did it
+	 */
+	if (has_persistent_clock())
+		return;
 
 	raw_spin_lock_irqsave(&timekeeper_lock, flags);
 	write_seqcount_begin(&tk_core.seq);
@@ -1150,8 +1125,8 @@ static void timekeeping_resume(void)
 	struct timespec64 ts_new, ts_delta;
 	struct timespec tmp;
 	cycle_t cycle_now, cycle_delta;
+	bool suspendtime_found = false;
 
-	sleeptime_injected = false;
 	read_persistent_clock(&tmp);
 	ts_new = timespec_to_timespec64(tmp);
 
@@ -1198,13 +1173,13 @@ static void timekeeping_resume(void)
 		nsec += ((u64) cycle_delta * mult) >> shift;
 
 		ts_delta = ns_to_timespec64(nsec);
-		sleeptime_injected = true;
+		suspendtime_found = true;
 	} else if (timespec64_compare(&ts_new, &timekeeping_suspend_time) > 0) {
 		ts_delta = timespec64_sub(ts_new, timekeeping_suspend_time);
-		sleeptime_injected = true;
+		suspendtime_found = true;
 	}
 
-	if (sleeptime_injected)
+	if (suspendtime_found)
 		__timekeeping_inject_sleeptime(tk, &ts_delta);
 
 	/* Re-base the last cycle value */
@@ -1242,33 +1217,31 @@ static int timekeeping_suspend(void)
 	 * value returned, update the persistent_clock_exists flag.
 	 */
 	if (timekeeping_suspend_time.tv_sec || timekeeping_suspend_time.tv_nsec)
-		persistent_clock_exists = true;
+		persistent_clock_exist = true;
 
 	raw_spin_lock_irqsave(&timekeeper_lock, flags);
 	write_seqcount_begin(&tk_core.seq);
 	timekeeping_forward_now(tk);
 	timekeeping_suspended = 1;
 
-	if (persistent_clock_exists) {
+	/*
+	 * To avoid drift caused by repeated suspend/resumes,
+	 * which each can add ~1 second drift error,
+	 * try to compensate so the difference in system time
+	 * and persistent_clock time stays close to constant.
+	 */
+	delta = timespec64_sub(tk_xtime(tk), timekeeping_suspend_time);
+	delta_delta = timespec64_sub(delta, old_delta);
+	if (abs(delta_delta.tv_sec)  >= 2) {
 		/*
-		 * To avoid drift caused by repeated suspend/resumes,
-		 * which each can add ~1 second drift error,
-		 * try to compensate so the difference in system time
-		 * and persistent_clock time stays close to constant.
+		 * if delta_delta is too large, assume time correction
+		 * has occured and set old_delta to the current delta.
 		 */
-		delta = timespec64_sub(tk_xtime(tk), timekeeping_suspend_time);
-		delta_delta = timespec64_sub(delta, old_delta);
-		if (abs(delta_delta.tv_sec) >= 2) {
-			/*
-			 * if delta_delta is too large, assume time correction
-			 * has occurred and set old_delta to the current delta.
-			 */
-			old_delta = delta;
-		} else {
-			/* Otherwise try to adjust old_system to compensate */
-			timekeeping_suspend_time =
-				timespec64_add(timekeeping_suspend_time, delta_delta);
-		}
+		old_delta = delta;
+	} else {
+		/* Otherwise try to adjust old_system to compensate */
+		timekeeping_suspend_time =
+			timespec64_add(timekeeping_suspend_time, delta_delta);
 	}
 
 	timekeeping_update(tk, TK_MIRROR);
@@ -1511,7 +1484,7 @@ static cycle_t logarithmic_accumulation(struct timekeeper *tk, cycle_t offset,
 						unsigned int *clock_set)
 {
 	cycle_t interval = tk->cycle_interval << shift;
-	u64 raw_nsecs;
+	u64 snsec_per_sec;
 
 	/* If the offset is smaller then a shifted interval, do nothing */
 	if (offset < interval)
@@ -1526,14 +1499,12 @@ static cycle_t logarithmic_accumulation(struct timekeeper *tk, cycle_t offset,
 	*clock_set |= accumulate_nsecs_to_secs(tk);
 
 	/* Accumulate raw time */
-	raw_nsecs = (u64)tk->raw_interval << shift;
-	raw_nsecs += tk->raw_time.tv_nsec;
-	if (raw_nsecs >= NSEC_PER_SEC) {
-		u64 raw_secs = raw_nsecs;
-		raw_nsecs = do_div(raw_secs, NSEC_PER_SEC);
-		tk->raw_time.tv_sec += raw_secs;
+	tk->tkr_raw.xtime_nsec += tk->raw_interval << shift;
+	snsec_per_sec = (u64)NSEC_PER_SEC << tk->tkr_raw.shift;
+	while (tk->tkr_raw.xtime_nsec >= snsec_per_sec) {
+		tk->tkr_raw.xtime_nsec -= snsec_per_sec;
+		tk->raw_sec++;
 	}
-	tk->raw_time.tv_nsec = raw_nsecs;
 
 	/* Accumulate error between NTP and clock interval */
 	tk->ntp_error += tk->ntp_tick << shift;
