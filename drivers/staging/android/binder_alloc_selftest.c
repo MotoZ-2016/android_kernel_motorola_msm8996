@@ -47,12 +47,9 @@ enum buf_end_align_type {
 	 */
 	SAME_PAGE_UNALIGNED = 0,
 	/**
-	 * @SAME_PAGE_ALIGNED: When the end of the previous buffer
-	 * is not page aligned, the end of this buffer is on the
-	 * same page as the end of the previous buffer and is page
-	 * aligned. When the previous buffer is page aligned, the
-	 * end of this buffer is aligned to the next page boundary.
-	 * Examples:
+	 * @SAME_PAGE_ALIGNED: The end of this buffer is on
+	 * the same page as the end of the previous buffer and
+	 * is page aligned. Examples:
 	 * buf1 ][ buf2 ]| ...
 	 * buf1 ]|[ buf2 ]| ...
 	 */
@@ -145,7 +142,7 @@ static void binder_selftest_free_buf(struct binder_alloc *alloc,
 		binder_alloc_free_buf(alloc, buffers[seq[i]]);
 
 	for (i = 0; i < (alloc->buffer_size / PAGE_SIZE); i++) {
-		if ((!alloc->pages[i]) == (i == 0)) {
+		if ((!alloc->pages[i]) == (i * PAGE_SIZE < BINDER_MIN_ALLOC)) {
 			pr_err("incorrect free state at page index %d\n", i);
 			binder_selftest_failures++;
 		}
@@ -210,6 +207,8 @@ static void binder_selftest_alloc_size(struct binder_alloc *alloc,
 	 * Only BUFFER_NUM - 1 buffer sizes are adjustable since
 	 * we need one giant buffer before getting to the last page.
 	 */
+	if (BINDER_MIN_ALLOC)
+		front_sizes[0] += BINDER_MIN_ALLOC - PAGE_SIZE;
 	back_sizes[0] += alloc->buffer_size - end_offset[BUFFER_NUM - 1];
 	binder_selftest_free_seq(alloc, front_sizes, seq, 0);
 	binder_selftest_free_seq(alloc, back_sizes, seq, 0);
