@@ -1710,6 +1710,7 @@ EXTRA_CFLAGS += -Wno-non-literal-null-conversion
 EXTRA_CFLAGS += -Wno-logical-not-parentheses
 EXTRA_CFLAGS += -Wno-parentheses-equality
 EXTRA_CFLAGS += -Wno-constant-logical-operand
+EXTRA_CFLAGS += -Wno-absolute-value
 endif 
 
 # If the module name is not "wlan", then the define MULTI_IF_NAME to be the
