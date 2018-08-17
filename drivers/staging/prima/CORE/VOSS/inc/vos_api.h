@@ -220,26 +220,6 @@ typedef enum
    VOS_WDI_WRITE,
 } vos_wdi_trace_event_type;
 
-/**
- * enum vos_hang_reason - host hang/ssr reason
- * @VOS_REASON_UNSPECIFIED: Unspecified reason
- * @VOS_GET_MSG_BUFF_FAILURE: Unable to get the message buffer
- * @VOS_ACTIVE_LIST_TIMEOUT: Current command processing is timedout
- * @VOS_SCAN_REQ_EXPIRED: Scan request timed out
- * @VOS_TRANSMISSIONS_TIMEOUT: transmission timed out
- * @VOS_DXE_FAILURE: dxe failure
- * @VOS_WDI_FAILURE: wdi failure
- */
-enum vos_hang_reason {
-	VOS_REASON_UNSPECIFIED = 0,
-	VOS_GET_MSG_BUFF_FAILURE = 1,
-	VOS_ACTIVE_LIST_TIMEOUT = 2,
-	VOS_SCAN_REQ_EXPIRED = 3,
-	VOS_TRANSMISSIONS_TIMEOUT = 4,
-	VOS_DXE_FAILURE = 5,
-	VOS_WDI_FAILURE = 6,
-};
-
 /*------------------------------------------------------------------------- 
   Function declarations and documenation
   ------------------------------------------------------------------------*/
@@ -479,13 +459,13 @@ VOS_STATUS vos_wlanReInit(void);
   Note that this API will not initiate any RIVA subsystem restart.
 
   @param
-       reason: vos_hang_reason
+       NONE
   @return
        VOS_STATUS_SUCCESS   - Operation completed successfully.
        VOS_STATUS_E_FAILURE - Operation failed.
 
 */
-VOS_STATUS vos_wlanRestart(enum vos_hang_reason reason);
+VOS_STATUS vos_wlanRestart(void);
 
 /**
   @brief vos_fwDumpReq()
@@ -578,18 +558,4 @@ static inline uint64_t __vos_get_log_timestamp(void)
 }
 #endif /* LINUX_VERSION_CODE */
 
-/**
- * vos_get_recovery_reason() - get self recovery reason
- * @reason: recovery reason
- *
- * Return: None
- */
-void vos_get_recovery_reason(enum vos_hang_reason *reason);
-
-/**
- * vos_reset_recovery_reason() - reset the reason to unspecified
- *
- * Return: None
- */
-void vos_reset_recovery_reason(void);
 #endif // if !defined __VOS_NVITEM_H
