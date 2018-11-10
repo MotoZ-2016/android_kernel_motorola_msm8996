@@ -1,0 +1,22 @@
+# Moto configuration options
+
+config MACH_MOTO
+	bool "MOTO device"
+	depends on ARCH_QCOM
+	help
+	  Support for Motorola products
+
+config MACH_MOTO_MSM8996
+	bool "MOTO MSM8996"
+	depends on MACH_MOTO
+	help
+	  Support for MSM8996 Motorola variants
+
+menu "Motorola board selection"
+
+	config MACH_MOTO_GRIFFIN
+		bool "moto_griffin_board"
+		depends on MACH_MOTO_MSM8996
+		help
+		  Support for Motorola Griffin variant
+endmenu
