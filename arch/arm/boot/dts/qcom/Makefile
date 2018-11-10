@@ -1,3 +1,20 @@
+ifeq ($(CONFIG_MACH_MOTO_GRIFFIN),y)
+dtb-$(CONFIG_ARCH_MSM8996) += msm8996-griffin-p1a.dtb \
+	msm8996-griffin-p1b.dtb \
+	msm8996-griffin-p2a.dtb \
+	msm8996-griffin-p2c.dtb \
+	msm8996-griffin-p3a.dtb \
+	msm8996-griffin-p3b.dtb \
+	msm8996-princeton-p1.dtb \
+	msm8996-princeton-p2.dtb \
+	msm8996-sheridan-p1a.dtb \
+	msm8996-sheridan-p1b.dtb \
+	msm8996-sheridan-p2a.dtb \
+	msm8996-sheridan-p2c.dtb \
+	msm8996-sheridan-p3a.dtb \
+	msm8996-sheridan-p3b.dtb \
+	msm8996-wabash-p1.dtb
+else
 dtb-$(CONFIG_ARCH_MSM8996) += msm8996-v2-pmi8994-mtp.dtb \
 	msm8996-v2-pmi8994-pmk8001-mtp.dtb \
 	msm8996-v2-pmi8994-pm8004-mtp.dtb \
@@ -119,6 +136,7 @@ dtb-$(CONFIG_ARCH_MSM8996) += msm8996-v2-pmi8994-mtp.dtb \
 	apq8096-v3-pmi8996-mdm9x55-i2s-mtp.dtb \
 	apq8096-v3-pmi8996-mdm9x55-slimbus-mtp.dtb \
 	apq8096-v3-pmi8996-dragonboard.dtb
+endif
 
 dtb-$(CONFIG_MSM_GVM_QUIN) += vplatform-lfv-msm8996.dtb
 
@@ -339,6 +357,12 @@ dtb-$(CONFIG_ARCH_MSM8909) += msm8909-pm8916-mtp.dtb \
 	msm8909-1gb-cdp.dtb \
 	apq8009-ext-codec-dragon.dtb \
 	apq8009-dragon.dtb
+
+ifeq ($(CONFIG_MACH_MOTO_MSM8996),y)
+# Add 1k of padding to the DTBs to allow for environment variables
+# to be runtime added by the bootloader (i.e. /chosen properties)
+DTC_FLAGS := -p 1024
+endif
 
 ifeq ($(CONFIG_ARM64),y)
 always          := $(dtb-y)
