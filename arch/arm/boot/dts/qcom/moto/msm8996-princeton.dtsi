@@ -531,3 +531,12 @@
 &muc_svc {
 	mmi,default-root-ver = /bits/ 8 <1>;
 };
+
+&gfx_cpr {
+	/delete-property/ mem-acc-supply;
+	/delete-property/ qcom,mem-acc-voltage;
+};
+
+&gfx_mem_acc_vreg {
+	status = "disabled";
+};
