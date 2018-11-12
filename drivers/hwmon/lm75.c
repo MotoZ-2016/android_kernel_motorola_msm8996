@@ -21,6 +21,8 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+#include <linux/interrupt.h>
+#include <linux/irq.h>
 #include <linux/jiffies.h>
 #include <linux/i2c.h>
 #include <linux/hwmon.h>
@@ -29,6 +31,8 @@
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/thermal.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include "lm75.h"
 
 
@@ -52,6 +56,7 @@ enum lm75_type {		/* keep sorted in alphabetical order */
 	tmp100,
 	tmp101,
 	tmp105,
+	tmp108,
 	tmp112,
 	tmp175,
 	tmp275,
@@ -71,13 +76,20 @@ static const u8 LM75_REG_TEMP[3] = {
 	0x02,		/* hyst */
 };
 
+#define TMP108_MODE_MASK 0x0300
+#define TMP108_SHUTDOWN  (0 << 8)
+#define TMP108_ONESHOT   (1 << 8)
+#define TMP108_CONT      (2 << 8)
+
 /* Each client has this additional data */
 struct lm75_data {
 	struct i2c_client	*client;
+	enum lm75_type          sensor;
+	int                     irq_gpio;
 	struct device		*hwmon_dev;
 	struct thermal_zone_device	*tz;
 	struct mutex		update_lock;
-	u8			orig_conf;
+	u16			orig_conf;
 	u8			resolution;	/* In bits, between 9 and 12 */
 	u8			resolution_limits;
 	char			valid;		/* !=0 if registers are valid */
@@ -161,16 +173,26 @@ static ssize_t set_temp(struct device *dev, struct device_attribute *da,
 	return count;
 }
 
+static ssize_t show_alarm(struct device *dev,
+			  struct device_attribute *da, char *buf)
+{
+	struct lm75_data *data = dev_get_drvdata(dev);
+	int value = gpio_get_value(data->irq_gpio);
+	return sprintf(buf, "%d\n", value);
+}
+
 static SENSOR_DEVICE_ATTR(temp1_max, S_IWUSR | S_IRUGO,
 			show_temp, set_temp, 1);
 static SENSOR_DEVICE_ATTR(temp1_max_hyst, S_IWUSR | S_IRUGO,
 			show_temp, set_temp, 2);
 static SENSOR_DEVICE_ATTR(temp1_input, S_IRUGO, show_temp, NULL, 0);
+static SENSOR_DEVICE_ATTR(temp1_alarm, S_IRUGO, show_alarm, NULL, 0);
 
 static struct attribute *lm75_attrs[] = {
 	&sensor_dev_attr_temp1_input.dev_attr.attr,
 	&sensor_dev_attr_temp1_max.dev_attr.attr,
 	&sensor_dev_attr_temp1_max_hyst.dev_attr.attr,
+	&sensor_dev_attr_temp1_alarm.dev_attr.attr,
 
 	NULL
 };
@@ -179,6 +201,66 @@ ATTRIBUTE_GROUPS(lm75);
 static const struct thermal_zone_of_device_ops lm75_of_thermal_ops = {
 	.get_temp = lm75_read_temp,
 };
+
+#ifdef CONFIG_OF
+static int lm75_of_init(struct lm75_data *data, struct i2c_client *client)
+{
+	struct device_node *np;
+
+	np = client->dev.of_node;
+	data->irq_gpio = of_get_gpio(np, 0);
+	return ((data->irq_gpio < 0) ? data->irq_gpio : 0);
+}
+#else
+static inline int lm75_of_init(struct lm75_data *data,
+			       struct i2c_client *client)
+{
+	return -EINVAL;
+}
+#endif
+
+static irqreturn_t lm75_alert_irq_handler(int irq, void *dev_id)
+{
+	struct lm75_data *data = dev_id;
+
+	data->valid = 0;
+	lm75_update_device(data->hwmon_dev);
+
+	sysfs_notify(&data->hwmon_dev->kobj, NULL, "temp1_alarm");
+
+	return IRQ_HANDLED;
+}
+
+static int lm75_init_irq_gpio(struct lm75_data *data, struct i2c_client *client)
+{
+	int ret;
+	int alert_irq;
+
+	ret = devm_gpio_request_one(&client->dev, data->irq_gpio,
+				    (GPIOF_IN | GPIOF_ACTIVE_LOW),
+				    client->name);
+	if (ret) {
+		dev_err(&client->dev, "GPIO request failed: %d\n", ret);
+		return ret;
+	}
+
+	alert_irq = gpio_to_irq(data->irq_gpio);
+	if (alert_irq < 0) {
+		dev_err(&client->dev, "GPIO to IRQ failed: %d\n", ret);
+		return ret;
+	}
+
+	irq_set_irq_type(alert_irq, IRQ_TYPE_EDGE_BOTH);
+
+	ret = devm_request_threaded_irq(&client->dev, alert_irq,
+					NULL,
+					lm75_alert_irq_handler,
+					(IRQF_TRIGGER_FALLING |
+					 IRQF_TRIGGER_RISING |
+					 IRQF_ONESHOT),
+					client->name, data);
+	return ret;
+}
 
 /*-----------------------------------------------------------------------*/
 
@@ -190,7 +272,7 @@ lm75_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	struct device *dev = &client->dev;
 	struct lm75_data *data;
 	int status;
-	u8 set_mask, clr_mask;
+	u16 set_mask, clr_mask;
 	int new;
 	enum lm75_type kind = id->driver_data;
 
@@ -204,7 +286,10 @@ lm75_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 	data->client = client;
 	i2c_set_clientdata(client, data);
+	data->irq_gpio = -1;
 	mutex_init(&data->update_lock);
+
+	data->sensor = id->driver_data;
 
 	/* Set to LM75 resolution (9 bits, 1/2 degree C) and range.
 	 * Then tweak to be more precise when appropriate.
@@ -275,6 +360,13 @@ lm75_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		data->resolution = 12;
 		data->sample_time = HZ / 2;
 		break;
+	case tmp108:
+		/* The tmp108 config register is word-sized */
+		set_mask = 1 << 7;		/* active high */
+		clr_mask = 1 << 10;		/* comparator mode */
+		data->resolution = 12;
+		data->sample_time = HZ;
+		break;
 	}
 
 	/* configure as specified */
@@ -295,6 +387,14 @@ lm75_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	if (IS_ERR(data->hwmon_dev))
 		return PTR_ERR(data->hwmon_dev);
 
+	if (client->dev.of_node) {
+		status = lm75_of_init(data, client);
+		if (!status)
+			status = lm75_init_irq_gpio(data, client);
+		if (status < 0)
+			dev_err(&client->dev, "unable to config IRQ.\n");
+	}
+
 	data->tz = thermal_zone_of_sensor_register(data->hwmon_dev, 0,
 						   data->hwmon_dev,
 						   &lm75_of_thermal_ops);
@@ -312,6 +412,7 @@ static int lm75_remove(struct i2c_client *client)
 	struct lm75_data *data = i2c_get_clientdata(client);
 
 	thermal_zone_of_sensor_unregister(data->hwmon_dev, data->tz);
+	gpio_free(data->irq_gpio);
 	hwmon_device_unregister(data->hwmon_dev);
 	lm75_write_value(client, LM75_REG_CONF, data->orig_conf);
 	return 0;
@@ -333,6 +434,7 @@ static const struct i2c_device_id lm75_ids[] = {
 	{ "tmp100", tmp100, },
 	{ "tmp101", tmp101, },
 	{ "tmp105", tmp105, },
+	{ "tmp108", tmp108, },
 	{ "tmp112", tmp112, },
 	{ "tmp175", tmp175, },
 	{ "tmp275", tmp275, },
@@ -434,12 +536,17 @@ static int lm75_suspend(struct device *dev)
 {
 	int status;
 	struct i2c_client *client = to_i2c_client(dev);
+	struct lm75_data *data = i2c_get_clientdata(client);
+
 	status = lm75_read_value(client, LM75_REG_CONF);
 	if (status < 0) {
 		dev_dbg(&client->dev, "Can't read config? %d\n", status);
 		return status;
 	}
-	status = status | LM75_SHUTDOWN;
+	if (data->sensor == tmp108)
+		status = ((status & ~(TMP108_MODE_MASK)) | TMP108_SHUTDOWN);
+	else
+		status = status | LM75_SHUTDOWN;
 	lm75_write_value(client, LM75_REG_CONF, status);
 	return 0;
 }
@@ -448,12 +555,17 @@ static int lm75_resume(struct device *dev)
 {
 	int status;
 	struct i2c_client *client = to_i2c_client(dev);
+	struct lm75_data *data = i2c_get_clientdata(client);
+
 	status = lm75_read_value(client, LM75_REG_CONF);
 	if (status < 0) {
 		dev_dbg(&client->dev, "Can't read config? %d\n", status);
 		return status;
 	}
-	status = status & ~LM75_SHUTDOWN;
+	if (data->sensor == tmp108)
+		status = ((status & ~(TMP108_MODE_MASK)) | TMP108_CONT);
+	else
+		status = status & ~LM75_SHUTDOWN;
 	lm75_write_value(client, LM75_REG_CONF, status);
 	return 0;
 }
@@ -487,11 +599,14 @@ static struct i2c_driver lm75_driver = {
 /*
  * All registers are word-sized, except for the configuration register.
  * LM75 uses a high-byte first convention, which is exactly opposite to
- * the SMBus standard.
+ * the SMBus standard. On tmp108, the configuratoin register is also
+ * word-sized.
  */
 static int lm75_read_value(struct i2c_client *client, u8 reg)
 {
-	if (reg == LM75_REG_CONF)
+	struct lm75_data *data = i2c_get_clientdata(client);
+
+	if (reg == LM75_REG_CONF && data->sensor != tmp108)
 		return i2c_smbus_read_byte_data(client, reg);
 	else
 		return i2c_smbus_read_word_swapped(client, reg);
@@ -499,7 +614,9 @@ static int lm75_read_value(struct i2c_client *client, u8 reg)
 
 static int lm75_write_value(struct i2c_client *client, u8 reg, u16 value)
 {
-	if (reg == LM75_REG_CONF)
+	struct lm75_data *data = i2c_get_clientdata(client);
+
+	if (reg == LM75_REG_CONF && data->sensor != tmp108)
 		return i2c_smbus_write_byte_data(client, reg, value);
 	else
 		return i2c_smbus_write_word_swapped(client, reg, value);
