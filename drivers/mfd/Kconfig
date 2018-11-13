@@ -1242,6 +1242,13 @@ config MFD_WM5102
 	help
 	  Support for Wolfson Microelectronics WM5102 low power audio SoC
 
+config MFD_FLORIDA
+	bool "Wolfson Microelectronics Florida class codecs"
+	depends on MFD_ARIZONA
+	help
+	  Support for Wolfson Microelectronics Florida class low power audio SoC
+	  such as the WM8280
+
 config MFD_WM5110
 	bool "Wolfson Microelectronics WM5110"
 	depends on MFD_ARIZONA

@@ -43,6 +43,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_ALC5623 if I2C
 	select SND_SOC_ALC5632 if I2C
 	select SND_SOC_CQ0093VC if MFD_DAVINCI_VOICECODEC
+	select SND_SOC_CS35L34 if I2C
 	select SND_SOC_CS35L32 if I2C
 	select SND_SOC_CS42L51_I2C if I2C
 	select SND_SOC_CS42L52 if I2C && INPUT
@@ -120,6 +121,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_WM2200 if I2C
 	select SND_SOC_WM5100 if I2C
 	select SND_SOC_WM5102 if MFD_WM5102
+	select SND_SOC_FLORIDA if MFD_FLORIDA
 	select SND_SOC_WM5110 if MFD_WM5110
 	select SND_SOC_WM8350 if MFD_WM8350
 	select SND_SOC_WM8400 if MFD_WM8400
@@ -164,6 +166,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_WM9705 if SND_SOC_AC97_BUS
 	select SND_SOC_WM9712 if SND_SOC_AC97_BUS
 	select SND_SOC_WM9713 if SND_SOC_AC97_BUS
+	select SND_SOC_FSA8500 if I2C
         help
           Normally ASoC codec drivers are only built if a machine driver which
           uses them is also built since they are only usable with a machine
@@ -181,9 +184,11 @@ config SND_SOC_88PM860X
 config SND_SOC_ARIZONA
 	tristate
 	default y if SND_SOC_WM5102=y
+	default y if SND_SOC_FLORIDA=y
 	default y if SND_SOC_WM5110=y
 	default y if SND_SOC_WM8997=y
 	default m if SND_SOC_WM5102=m
+	default m if SND_SOC_FLORIDA=m
 	default m if SND_SOC_WM5110=m
 	default m if SND_SOC_WM8997=m
 
@@ -195,9 +200,11 @@ config SND_SOC_WM_HUBS
 config SND_SOC_WM_ADSP
 	tristate
 	default y if SND_SOC_WM5102=y
+	default y if SND_SOC_FLORIDA=y
 	default y if SND_SOC_WM5110=y
 	default y if SND_SOC_WM2200=y
 	default m if SND_SOC_WM5102=m
+	default m if SND_SOC_FLORIDA=m
 	default m if SND_SOC_WM5110=m
 	default m if SND_SOC_WM2200=m
 
@@ -330,6 +337,11 @@ config SND_SOC_CQ0093VC
 
 config SND_SOC_CS35L32
 	tristate "Cirrus Logic CS35L32 CODEC"
+	depends on I2C
+
+config SND_SOC_CS35L34
+	tristate "Cirrus Logic CS35L34"
+	default n
 	depends on I2C
 
 config SND_SOC_CS42L51
@@ -698,6 +710,9 @@ config SND_SOC_WM5100
 config SND_SOC_WM5102
 	tristate
 
+config SND_SOC_FLORIDA
+	tristate
+
 config SND_SOC_WM5110
 	tristate
 
@@ -869,6 +884,10 @@ config SND_SOC_TPA6130A2
 config SND_SOC_MSM_STUB
 	tristate
 
+config SND_SOC_MODS_CODEC_SHIM
+	tristate "shim codec for mods"
+	depends on MODS_CODEC_BUS
+
 config SND_SOC_MSM_HDMI_CODEC_RX
 	bool "HDMI Audio Playback"
 	depends on FB_MSM_MDSS_HDMI_PANEL && (SND_SOC_APQ8084 || SND_SOC_MSM8994 || SND_SOC_MSM8996)
@@ -879,4 +898,7 @@ config SND_SOC_MSM_HDMI_CODEC_RX
 config SND_SOC_MSM_HDMI_DBA_CODEC_RX
 	bool "HDMI DBA Audio Playback"
 	depends on MSM_DBA
+
+config SND_SOC_FSA8500
+	tristate
 endmenu

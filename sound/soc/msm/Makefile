@@ -50,3 +50,9 @@ obj-$(CONFIG_SND_SOC_MSM8909) += snd-soc-msm8909.o
 # for MDM9640 sound card driver
 snd-soc-mdm9640-objs := mdm9640.o
 obj-$(CONFIG_SND_SOC_MDM9640) += snd-soc-mdm9640.o
+
+# for Opalum controls
+obj-$(CONFIG_SND_SOC_OPALUM) += ospl2xx.o
+
+# for tas2560 dsp algo controls
+obj-$(CONFIG_SND_SOC_TAS2560) += tas2560-algo.o

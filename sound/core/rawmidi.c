@@ -559,7 +559,7 @@ static int snd_rawmidi_info(struct snd_rawmidi_substream *substream,
 			    struct snd_rawmidi_info *info)
 {
 	struct snd_rawmidi *rmidi;
-	
+
 	if (substream == NULL)
 		return -ENODEV;
 	rmidi = substream->rmidi;
@@ -670,6 +670,7 @@ int snd_rawmidi_output_params(struct snd_rawmidi_substream *substream,
 		}
 		spin_lock_irqsave(&runtime->lock, flags);
 		oldbuf = runtime->buffer;
+
 		runtime->buffer = newbuf;
 		runtime->buffer_size = params->buffer_size;
 		runtime->avail = runtime->buffer_size;
@@ -1016,6 +1017,8 @@ static long snd_rawmidi_kernel_read1(struct snd_rawmidi_substream *substream,
 		result += count1;
 		count -= count1;
 	}
+	if (userbuf)
+		mutex_unlock(&runtime->realloc_mutex);
 	spin_unlock_irqrestore(&runtime->lock, flags);
 	if (userbuf)
 		mutex_unlock(&runtime->realloc_mutex);

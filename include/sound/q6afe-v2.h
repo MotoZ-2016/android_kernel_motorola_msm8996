@@ -242,7 +242,7 @@ int afe_open(u16 port_id, union afe_port_config *afe_config, int rate);
 int afe_close(int port_id);
 enum lpass_clk_ver afe_get_lpass_clk_ver(void);
 int afe_loopback(u16 enable, u16 rx_port, u16 tx_port);
-int afe_sidetone(u16 tx_port_id, u16 rx_port_id, u16 enable, uint16_t gain);
+int afe_sidetone_enable(u16 tx_port_id, u16 rx_port_id,  bool enable);
 int afe_loopback_gain(u16 port_id, u16 volume);
 int afe_validate_port(u16 port_id);
 int afe_get_port_index(u16 port_id);
@@ -337,4 +337,15 @@ int afe_send_custom_tdm_header_cfg(
 	u16 port_id);
 int afe_tdm_port_start(u16 port_id, struct afe_tdm_port_config *tdm_port,
 		u32 rate, u16 num_groups);
+
+#ifdef CONFIG_SND_SOC_OPALUM
+int ospl2xx_afe_set_callback(int32_t (*ospl2xx_callback_func)
+				(struct apr_client_data *data));
+int ospl2xx_afe_apr_send_pkt(void *data, int index);
+#endif
+#ifdef CONFIG_SND_SOC_TAS2560
+int tas2560_algo_afe_set_callback(int32_t (*tas2560_algo_callback_func)
+				(struct apr_client_data *data));
+int tas2560_algo_afe_apr_send_pkt(void *data, int index);
+#endif
 #endif /* __Q6AFE_V2_H__ */
