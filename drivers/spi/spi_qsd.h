@@ -270,11 +270,11 @@ struct msm_spi_bam_pipe {
 struct msm_spi_bam {
 	void __iomem            *base;
 	phys_addr_t              phys_addr;
+	size_t                   size;
 	uintptr_t                handle;
 	u32                      irq;
 	struct msm_spi_bam_pipe  prod;
 	struct msm_spi_bam_pipe  cons;
-	bool                     deregister_required;
 	u32			 curr_rx_bytes_recvd;
 	u32			 curr_tx_bytes_sent;
 	u32			 bam_rx_len;
