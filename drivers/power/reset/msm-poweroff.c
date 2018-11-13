@@ -152,6 +152,7 @@ static bool get_dload_mode(void)
 	return dload_mode_enabled;
 }
 
+#if 0
 static void enable_emergency_dload_mode(void)
 {
 	int ret;
@@ -176,6 +177,7 @@ static void enable_emergency_dload_mode(void)
 	if (ret)
 		pr_err("Failed to set secure EDLOAD mode: %d\n", ret);
 }
+#endif
 
 static int dload_set(const char *val, struct kernel_param *kp)
 {
@@ -292,7 +294,7 @@ static void msm_restart_prepare(const char *cmd)
 	}
 
 	/* Hard reset the PMIC unless memory contents must be maintained. */
-	if (need_warm_reset) {
+	if (need_warm_reset || in_panic) {
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
 	} else {
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
@@ -303,6 +305,14 @@ static void msm_restart_prepare(const char *cmd)
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_BOOTLOADER);
 			__raw_writel(0x77665500, restart_reason);
+			/* set reboot_bl flag in PMIC for cold reset */
+			qpnp_pon_store_extra_reset_info(RESET_EXTRA_REBOOT_BL_REASON,
+				RESET_EXTRA_REBOOT_BL_REASON);
+			/*
+			 * force cold reboot here to avoid impaction from
+			 * modem double reboot workaround solution.
+			 */
+			qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
 		} else if (!strncmp(cmd, "recovery", 8)) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RECOVERY);
@@ -330,11 +340,36 @@ static void msm_restart_prepare(const char *cmd)
 			if (!ret)
 				__raw_writel(0x6f656d00 | (code & 0xff),
 					     restart_reason);
+#if 0
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
+#endif
+		} else if (!strncmp(cmd, "post-wdt", 8)) {
+			/* set  flag in PMIC to nofity BL post watchdog reboot */
+			qpnp_pon_store_extra_reset_info(RESET_EXTRA_POST_REBOOT_MASK,
+				RESET_EXTRA_POST_WDT_REASON);
+			 /* force cold reboot */
+			qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+		} else if (!strncmp(cmd, "post-pmicwdt", 12)) {
+			/* set  flag in PMIC to nofity BL post pmic watchdog reboot */
+			qpnp_pon_store_extra_reset_info(RESET_EXTRA_POST_REBOOT_MASK,
+				RESET_EXTRA_POST_PMICWDT_REASON);
+			 /* force cold reboot */
+			qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+		} else if (!strncmp(cmd, "post-panic", 10)) {
+			/* set  flag in PMIC to nofity BL post panic reboot */
+			qpnp_pon_store_extra_reset_info(RESET_EXTRA_POST_REBOOT_MASK,
+				RESET_EXTRA_POST_PANIC_REASON);
+			 /* force cold reboot */
+			qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
 		} else {
 			__raw_writel(0x77665501, restart_reason);
 		}
+	} else if (in_panic == 1) {
+		__raw_writel(0x77665505, restart_reason);
+		qpnp_pon_store_extra_reset_info(RESET_EXTRA_PANIC_REASON, 0xFF);
+	} else {
+		__raw_writel(0x77665501, restart_reason);
 	}
 
 	flush_cache_all();
@@ -447,6 +482,10 @@ static ssize_t show_emmc_dload(struct kobject *kobj, struct attribute *attr,
 				char *buf)
 {
 	uint32_t read_val, show_val;
+
+	if (dload_type_addr == NULL) {
+		return snprintf(buf, 8, "%s\n", "No Node");
+	}
 
 	read_val = __raw_readl(dload_type_addr);
 	if (read_val == EMMC_DLOAD_TYPE)

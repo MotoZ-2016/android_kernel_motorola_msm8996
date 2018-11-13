@@ -29,6 +29,11 @@
 
 #define MAX17042_CHARACTERIZATION_DATA_SIZE 48
 
+#define MAX17042_CONFIG_TEX (BIT(0)<<8)
+#define MAX17042_CONFIG_TEN (BIT(1)<<8)
+#define MAX17042_ALRT_MSK_MAX 0xFF00
+#define MAX17042_ALRT_MSK_MIN 0x00FF
+
 enum max17042_register {
 	MAX17042_STATUS		= 0x00,
 	MAX17042_VALRT_Th	= 0x01,
@@ -100,6 +105,7 @@ enum max17042_register {
 
 	MAX17042_VFSOC0		= 0x48,
 
+	MAX17042_QH0		= 0x4C,
 	MAX17042_QH		= 0x4D,
 	MAX17042_QL		= 0x4E,
 
@@ -139,6 +145,9 @@ struct max17042_reg_data {
 };
 
 struct max17042_config_data {
+	/* Revision of this Data*/
+	u16	revision;
+
 	/* External current sense resistor value in milli-ohms */
 	u32	cur_sense_val;
 
@@ -195,10 +204,25 @@ struct max17042_config_data {
 	u16	cell_char_tbl[MAX17042_CHARACTERIZATION_DATA_SIZE];
 } __packed;
 
+/*
+ * used to convert a value from Temperature register to a "real" temp value.
+ * This conversion table can be used when configuring tgain and toff is not
+ * sufficient to get accurate temperature measurements.
+ * The result[0] corresponds to start temp, result[1] to (start + 1) temp, etc.
+ */
+struct max17042_temp_conv {
+	s16 start;	/* Centigrade */
+	s16 *result;	/* Deci-centigrade */
+	int num_result;	/* Number of entries in result array */
+};
+
 struct max17042_platform_data {
 	struct max17042_reg_data *init_data;
 	struct max17042_config_data *config_data;
 	int num_init_data; /* Number of enties in init_data array */
+	struct gpio *gpio_list;
+	int num_gpio_list; /* Number of entries in gpio_list array */
+	struct max17042_temp_conv *tcnv; /* temp conversion table */
 	bool enable_current_sense;
 	bool enable_por_init; /* Use POR init from Maxim appnote */
 
@@ -208,6 +232,19 @@ struct max17042_platform_data {
 	 * the datasheet although it can be changed by board designers.
 	 */
 	unsigned int r_sns;
+	/*
+	 * Enable this flag to report "0" SOC iff battery undervoltage interrupt
+	 * has fired.
+	 */
+	bool batt_undervoltage_zero_soc;
+
+	const char *batt_psy_name;
+	int warm_temp_c;
+	int hot_temp_c;
+	int cool_temp_c;
+	int cold_temp_c;
+	int hotspot_thrs_c;
+	bool use_external_temp;
 };
 
 #endif /* __MAX17042_BATTERY_H_ */

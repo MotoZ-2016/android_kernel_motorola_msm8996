@@ -212,6 +212,15 @@ config BATTERY_MAX17042
 	  with MAX17042. This driver also supports max17047/50 chips which are
 	  improved version of max17042.
 
+config BATTERY_MAX17042_DEBUGFS
+	bool "Maxim MAX17042/17047/17050/8997/8966 Fuel Gauge debugfs support"
+	depends on BATTERY_MAX17042 && DEBUG_FS
+	help
+	  Say Y here to enable access to fuel gauge registers through debugfs.
+	  The registers are accessed through addr and data files.
+	  When this is turned on it will be easier to access the part
+	  to debug issues that might exist.
+
 config BATTERY_Z2
 	tristate "Z2 battery driver"
 	depends on I2C && MACH_ZIPIT2
@@ -361,6 +370,15 @@ config CHARGER_BQ24190
 	depends on I2C && GPIOLIB
 	help
 	  Say Y to enable support for the TI BQ24190 battery charger.
+
+config CHARGER_FAN54100
+	tristate "Fairchild 54100 charger switch support"
+	depends on I2C && GPIOLIB
+	help
+	  Say Y to enable support for the Fairchild 54100 charger switch.
+	  The driver supports charging control via its internal switch.
+	  The switch will have no current control and just connect Charger
+	  to battery.
 
 config CHARGER_BQ24735
 	tristate "TI BQ24735 battery charger support"
@@ -515,6 +533,16 @@ config QPNP_SMB2
 	  This charger module supports Type-C and uUSB interface with
 	  autonomous charging and APSD for different charging sources.
 	  This module also interfaces USB PD for power-delivery support.
+
+config QPNP_SMBCHARGER_MMI
+	tristate "QPNP SMB Charger driver for MMI"
+	depends on SPMI || MSM_SPMI
+	depends on OF_SPMI
+	help
+	  Say Y here to enable the dual path switch mode battery charger which
+	  supports USB detection and battery charging up to 3A.
+	  The driver also offers relevant information to userspace via the
+	  power supply framework.
 
 config FUELGAUGE_STC3117
 	tristate "STC3117 fuel gauge driver"

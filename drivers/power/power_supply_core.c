@@ -202,6 +202,58 @@ int power_supply_set_usb_otg(struct power_supply *psy, int otg)
 EXPORT_SYMBOL(power_supply_set_usb_otg);
 
 /**
+ * power_supply_set_usb_owner - set owner of the usb power supply
+ * @psy:	the usb power supply to control
+ * @owner:	value to set the owner to
+ */
+int power_supply_set_usb_owner(struct power_supply *psy,
+				enum power_supply_usb_owner owner)
+{
+	const union power_supply_propval ret = {owner, };
+
+	if (psy->set_property)
+		return psy->set_property(psy, POWER_SUPPLY_PROP_USB_OWNER,
+								&ret);
+	return -ENXIO;
+}
+EXPORT_SYMBOL(power_supply_set_usb_owner);
+
+/**
+ * power_supply_get_usb_owner - get owner of the usb power supply
+ * @psy:	the usb power supply to control
+ * @owner:	value to set the otg property to
+ */
+enum power_supply_usb_owner power_supply_get_usb_owner(struct power_supply *psy)
+{
+	union power_supply_propval ret = {0, };
+
+	if (!psy->get_property(psy, POWER_SUPPLY_PROP_USB_OWNER, &ret))
+		return ret.intval;
+
+	return PSY_USB_OWNER_NONE;
+}
+EXPORT_SYMBOL(power_supply_get_usb_owner);
+
+/**
+ * power_supply_set_chg_present - set chg_present of the usb power supply
+ * @psy:	the usb power supply to control
+ * @present:	value to set the chg_present to
+ */
+int power_supply_set_chg_present(struct power_supply *psy,
+				bool present)
+{
+	const union power_supply_propval ret = {present, };
+
+	if (psy->set_property)
+		return psy->set_property(psy, POWER_SUPPLY_PROP_CHG_PRESENT,
+								&ret);
+	return -ENXIO;
+}
+EXPORT_SYMBOL(power_supply_set_chg_present);
+
+
+
+/**
  * power_supply_set_supply_type - set type of the power supply
  * @psy:	the power supply to control
  * @supply_type:	sets type property of power supply
@@ -563,6 +615,17 @@ static int power_supply_match_device_by_name(struct device *dev, const void *dat
 	return strcmp(psy->name, name) == 0;
 }
 
+/**
+ * power_supply_get_by_name() - Search for a power supply and returns its ref
+ * @name: Power supply name to fetch
+ *
+ * If power supply was found, it increases reference count for the
+ * internal power supply's device. The user should power_supply_put()
+ * after usage.
+ *
+ * Return: On success returns a reference to a power supply with
+ * matching name equals to @name, a NULL otherwise.
+ */
 struct power_supply *power_supply_get_by_name(const char *name)
 {
 	struct device *dev = class_find_device(power_supply_class, NULL, name,
@@ -572,12 +635,42 @@ struct power_supply *power_supply_get_by_name(const char *name)
 }
 EXPORT_SYMBOL_GPL(power_supply_get_by_name);
 
+/**
+ * power_supply_put() - Drop reference obtained with power_supply_get_by_name
+ * @psy: Reference to put
+ *
+ * The reference to power supply should be put before unregistering
+ * the power supply.
+ */
+void power_supply_put(struct power_supply *psy)
+{
+	might_sleep();
+
+	if (!psy)
+		return;
+
+	put_device(psy->dev);
+}
+EXPORT_SYMBOL_GPL(power_supply_put);
+
 #ifdef CONFIG_OF
 static int power_supply_match_device_node(struct device *dev, const void *data)
 {
 	return dev->parent && dev->parent->of_node == data;
 }
 
+/**
+ * power_supply_get_by_phandle() - Search for a power supply and returns its ref
+ * @np: Pointer to device node holding phandle property
+ * @phandle_name: Name of property holding a power supply name
+ *
+ * If power supply was found, it increases reference count for the
+ * internal power supply's device. The user should power_supply_put()
+ * after usage.
+ *
+ * Return: On success returns a reference to a power supply with
+ * matching name equals to value under @property, NULL or ERR_PTR otherwise.
+ */
 struct power_supply *power_supply_get_by_phandle(struct device_node *np,
 							const char *property)
 {
@@ -861,6 +954,8 @@ static int __power_supply_register(struct device *parent,
 	if (rc)
 		goto create_triggers_failed;
 
+	atomic_notifier_call_chain(&power_supply_notifier,
+				   PSY_EVENT_PROP_ADDED, psy);
 	power_supply_changed(psy);
 
 	return 0;
@@ -894,6 +989,8 @@ EXPORT_SYMBOL_GPL(power_supply_register_no_ws);
 void power_supply_unregister(struct power_supply *psy)
 {
 	WARN_ON(atomic_dec_return(&psy->use_cnt));
+	atomic_notifier_call_chain(&power_supply_notifier,
+				   PSY_EVENT_PROP_REMOVED, psy);
 	cancel_work_sync(&psy->changed_work);
 	sysfs_remove_link(&psy->dev->kobj, "powers");
 	power_supply_remove_triggers(psy);

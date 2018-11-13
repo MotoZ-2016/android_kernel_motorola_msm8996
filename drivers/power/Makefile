@@ -76,10 +76,13 @@ obj-$(CONFIG_QPNP_CHARGER)	+= qpnp-charger.o
 obj-$(CONFIG_QPNP_LINEAR_CHARGER)	+= qpnp-linear-charger.o
 obj-$(CONFIG_QPNP_SMBCHARGER)	+= qpnp-smbcharger.o pmic-voter.o
 obj-$(CONFIG_QPNP_SMB2)		+= battery.o qpnp-smb2.o pmic-voter.o smb-lib.o storm-watch.o
+obj-$(CONFIG_QPNP_SMBCHARGER_MMI)	+= qpnp-smbcharger-mmi.o pmic-voter.o
+
 obj-$(CONFIG_QPNP_TYPEC)	+= qpnp-typec.o
 obj-$(CONFIG_CHARGER_TPS65090)	+= tps65090-charger.o
 obj-$(CONFIG_BATTERY_BCL)	+= battery_current_limit.o
 obj-$(CONFIG_MSM_BCL_CTL)	+= msm_bcl.o
 obj-$(CONFIG_MSM_BCL_PERIPHERAL_CTL) += bcl_peripheral.o
+obj-$(CONFIG_CHARGER_FAN54100) += fan54100-charger.o
 obj-$(CONFIG_POWER_RESET)	+= reset/
 obj-$(CONFIG_ARCH_MSM)		+= qcom/

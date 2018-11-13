@@ -61,6 +61,7 @@ enum {
 	POWER_SUPPLY_HEALTH_WARM,
 	POWER_SUPPLY_HEALTH_COOL,
 	POWER_SUPPLY_HEALTH_HOT,
+	POWER_SUPPLY_HEALTH_SLIGHTLY_COOL,
 };
 
 enum {
@@ -80,6 +81,20 @@ enum {
 	POWER_SUPPLY_CAPACITY_LEVEL_NORMAL,
 	POWER_SUPPLY_CAPACITY_LEVEL_HIGH,
 	POWER_SUPPLY_CAPACITY_LEVEL_FULL,
+};
+
+enum {
+	POWER_SUPPLY_CHARGE_RATE_NONE = 0,
+	POWER_SUPPLY_CHARGE_RATE_NORMAL,
+	POWER_SUPPLY_CHARGE_RATE_WEAK,
+	POWER_SUPPLY_CHARGE_RATE_TURBO,
+};
+
+enum {
+	POWER_SUPPLY_EXTERN_STATE_DIS = 0,
+	POWER_SUPPLY_EXTERN_STATE_SINK,
+	POWER_SUPPLY_EXTERN_STATE_SRC,
+	POWER_SUPPLY_EXTERN_STATE_OFF,
 };
 
 enum {
@@ -117,6 +132,73 @@ enum {
 	POWER_SUPPLY_PL_USBMID_USBMID,
 };
 
+enum {
+	POWER_SUPPLY_PTP_INT_SND_UNKNOWN = 0,
+	POWER_SUPPLY_PTP_INT_SND_NEVER,
+	POWER_SUPPLY_PTP_INT_SND_SUPPLEMENTAL,
+	POWER_SUPPLY_PTP_INT_SND_LOW_BATT_SAVER,
+};
+
+enum {
+	POWER_SUPPLY_PTP_INT_RCV_UNKNOWN = 0,
+	POWER_SUPPLY_PTP_INT_RCV_NEVER,
+	POWER_SUPPLY_PTP_INT_RCV_FIRST,
+	POWER_SUPPLY_PTP_INT_RCV_SECOND,
+	POWER_SUPPLY_PTP_INT_RCV_PARALLEL,
+};
+
+enum {
+	POWER_SUPPLY_PTP_EXT_SUPPORT_UNKNOWN = 0,
+	POWER_SUPPLY_PTP_EXT_NOT_SUPPORTED,
+	POWER_SUPPLY_PTP_EXT_SUPPORTED,
+};
+
+enum {
+	POWER_SUPPLY_PTP_CURRENT_OFF = 0,
+	POWER_SUPPLY_PTP_CURRENT_FROM_PHONE,
+	POWER_SUPPLY_PTP_CURRENT_TO_PHONE,
+};
+
+enum {
+	POWER_SUPPLY_PTP_EXT_PRESENCE_UNKNOWN = 0,
+	POWER_SUPPLY_PTP_EXT_NOT_PRESENT,
+	POWER_SUPPLY_PTP_EXT_WIRED_PRESENT,
+	POWER_SUPPLY_PTP_EXT_WIRELESS_PRESENT,
+	POWER_SUPPLY_PTP_EXT_WIRED_WIRELESS_PRESENT,
+};
+
+enum {
+	POWER_SUPPLY_PTP_POWER_REQUIREMENTS_UNKNOWN = 0,
+	POWER_SUPPLY_PTP_POWER_NOT_REQUIRED,
+	POWER_SUPPLY_PTP_POWER_REQUIRED,
+};
+
+enum {
+	POWER_SUPPLY_PTP_POWER_AVAILABILITY_UNKNOWN = 0,
+	POWER_SUPPLY_PTP_POWER_NOT_AVAILABLE,
+	POWER_SUPPLY_PTP_POWER_AVAILABLE_EXTERNAL,
+	POWER_SUPPLY_PTP_POWER_AVAILABLE_INTERNAL,
+};
+
+enum {
+	POWER_SUPPLY_PTP_POWER_SOURCE_UNKNOWN = 0,
+	POWER_SUPPLY_PTP_POWER_SOURCE_NONE,
+	POWER_SUPPLY_PTP_POWER_SOURCE_BATTERY,
+	POWER_SUPPLY_PTP_POWER_SOURCE_WIRED,
+	POWER_SUPPLY_PTP_POWER_SOURCE_WIRELESS,
+	POWER_SUPPLY_PTP_POWER_SOURCE_NONE_TURBO,
+	POWER_SUPPLY_PTP_POWER_SOURCE_BATTERY_TURBO,
+	POWER_SUPPLY_PTP_POWER_SOURCE_WIRED_TURBO,
+	POWER_SUPPLY_PTP_POWER_SOURCE_WIRELESS_TURBO,
+};
+
+enum power_supply_otg_status {
+	POWER_SUPPLY_USB_OTG_DISABLE,
+	POWER_SUPPLY_USB_OTG_ENABLE_DATA,
+	POWER_SUPPLY_USB_OTG_ENABLE_POWER,
+	POWER_SUPPLY_USB_OTG_ENABLE,
+};
+
 enum power_supply_property {
 	/* Properties of type `int' */
 	POWER_SUPPLY_PROP_STATUS = 0,
@@ -149,6 +231,7 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_CHARGE_NOW_RAW,
 	POWER_SUPPLY_PROP_CHARGE_NOW_ERROR,
 	POWER_SUPPLY_PROP_CHARGE_AVG,
+	POWER_SUPPLY_PROP_CHARGE_RATE,
 	POWER_SUPPLY_PROP_CHARGE_COUNTER,
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT,
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
@@ -176,6 +259,7 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_TEMP_AMBIENT,
 	POWER_SUPPLY_PROP_TEMP_AMBIENT_ALERT_MIN,
 	POWER_SUPPLY_PROP_TEMP_AMBIENT_ALERT_MAX,
+	POWER_SUPPLY_PROP_TEMP_HOTSPOT,
 	POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW,
 	POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
 	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
@@ -184,7 +268,6 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_SCOPE,
 	POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT,
 	POWER_SUPPLY_PROP_CALIBRATE,
-	/* Local extensions */
 	POWER_SUPPLY_PROP_USB_HC,
 	POWER_SUPPLY_PROP_USB_OTG,
 	POWER_SUPPLY_PROP_BATTERY_CHARGING_ENABLED,
@@ -205,10 +288,13 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_COOL_TEMP,
 	POWER_SUPPLY_PROP_WARM_TEMP,
 	POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL,
+	POWER_SUPPLY_PROP_NUM_SYSTEM_TEMP_LEVELS,
 	POWER_SUPPLY_PROP_RESISTANCE,
 	POWER_SUPPLY_PROP_RESISTANCE_CAPACITIVE,
 	POWER_SUPPLY_PROP_RESISTANCE_ID, /* in Ohms */
 	POWER_SUPPLY_PROP_RESISTANCE_NOW,
+	POWER_SUPPLY_PROP_TAPER_REACHED,
+	POWER_SUPPLY_PROP_AGE,
 	POWER_SUPPLY_PROP_FLASH_CURRENT_MAX,
 	POWER_SUPPLY_PROP_UPDATE_NOW,
 	POWER_SUPPLY_PROP_ESR_COUNT,
@@ -260,6 +346,31 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_CONNECTOR_HEALTH,
 	POWER_SUPPLY_PROP_HW_CURRENT_MAX,
 	POWER_SUPPLY_PROP_REAL_TYPE,
+	POWER_SUPPLY_PROP_PTP_INTERNAL_SEND,
+	POWER_SUPPLY_PROP_PTP_INTERNAL_RECEIVE,
+	POWER_SUPPLY_PROP_PTP_EXTERNAL,
+	POWER_SUPPLY_PROP_PTP_CURRENT_FLOW,
+	POWER_SUPPLY_PROP_PTP_MAX_INPUT_CURRENT,
+	POWER_SUPPLY_PROP_PTP_MAX_OUTPUT_CURRENT,
+	POWER_SUPPLY_PROP_PTP_EXTERNAL_PRESENT,
+	POWER_SUPPLY_PROP_PTP_POWER_REQUIRED,
+	POWER_SUPPLY_PROP_PTP_POWER_AVAILABLE,
+	POWER_SUPPLY_PROP_PTP_POWER_SOURCE,
+	POWER_SUPPLY_PROP_PTP_MAX_OUTPUT_VOLTAGE,
+	POWER_SUPPLY_PROP_PTP_OUTPUT_VOLTAGE,
+	POWER_SUPPLY_PROP_PTP_MAX_INPUT_VOLTAGE,
+	POWER_SUPPLY_PROP_PTP_INPUT_VOLTAGE,
+	POWER_SUPPLY_PROP_MAIN_STATUS,
+	POWER_SUPPLY_PROP_EXTERN_STATE,
+	POWER_SUPPLY_PROP_DISABLE_USB,
+	POWER_SUPPLY_PROP_SWITCH_STATE,
+	POWER_SUPPLY_PROP_WAKEUP,
+	POWER_SUPPLY_PROP_MASK_INT,
+	POWER_SUPPLY_PROP_SYSTEM_TEMP_IN_LEVEL,
+	POWER_SUPPLY_PROP_NUM_SYSTEM_TEMP_IN_LEVELS,
+	POWER_SUPPLY_PROP_USB_LPM,
+	POWER_SUPPLY_PROP_USB_OWNER,
+	POWER_SUPPLY_PROP_CHG_PRESENT,
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_PROP_CHARGE_COUNTER_EXT,
 	/* Properties of type `const char *' */
@@ -290,6 +401,16 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_TYPEC,	/* Type-C */
 	POWER_SUPPLY_TYPE_UFP,		/* Type-C UFP */
 	POWER_SUPPLY_TYPE_DFP,		/* TYpe-C DFP */
+	POWER_SUPPLY_TYPE_PTP,		/* Greybus power transfer protocol */
+	POWER_SUPPLY_TYPE_SWITCH,	/* Charge Path Switch */
+	POWER_SUPPLY_TYPE_USBC,		/* USBC Port */
+	POWER_SUPPLY_TYPE_USBC_PD,	/* USBC Port Power Delivery*/
+	POWER_SUPPLY_TYPE_USBC_SINK,	/* USBC Port Sink*/
+	POWER_SUPPLY_TYPE_USBC_SRC,	/* USBC Port Source*/
+	POWER_SUPPLY_TYPE_USBC_DBG,	/* USBC Port Debug*/
+	POWER_SUPPLY_TYPE_USBC_PWR,	/* USBC Port Powered*/
+	POWER_SUPPLY_TYPE_USBC_AUDIO,	/* USBC Port Audio*/
+	POWER_SUPPLY_TYPE_USBC_UNSUPP,	/* USBC Port Unsupported*/
 };
 
 /* Indicates USB Type-C CC connection status */
@@ -319,6 +440,16 @@ enum power_supply_typec_power_role {
 
 enum power_supply_notifier_events {
 	PSY_EVENT_PROP_CHANGED,
+	PSY_EVENT_PROP_ADDED,
+	PSY_EVENT_PROP_REMOVED,
+};
+
+enum power_supply_usb_owner {
+	PSY_USB_OWNER_NONE,
+	PSY_USB_OWNER_EXT_2,
+	PSY_USB_OWNER_EXT_3,
+	PSY_USB_OWNER_EXT_DUAL,
+	PSY_USB_OWNER_USBC,
 };
 
 union power_supply_propval {
@@ -357,6 +488,8 @@ struct power_supply {
 			    const union power_supply_propval *val);
 	int (*property_is_writeable)(struct power_supply *psy,
 				     enum power_supply_property psp);
+	int (*property_is_broadcast)(struct power_supply *psy,
+					enum power_supply_property psp);
 	void (*external_power_changed)(struct power_supply *psy);
 	void (*set_charged)(struct power_supply *psy);
 
@@ -420,6 +553,7 @@ extern struct atomic_notifier_head power_supply_notifier;
 extern int power_supply_reg_notifier(struct notifier_block *nb);
 extern void power_supply_unreg_notifier(struct notifier_block *nb);
 extern struct power_supply *power_supply_get_by_name(const char *name);
+extern void power_supply_put(struct power_supply *psy);
 #ifdef CONFIG_OF
 extern struct power_supply *power_supply_get_by_phandle(struct device_node *np,
 							const char *property);
@@ -459,8 +593,13 @@ extern int power_supply_set_voltage_limit(struct power_supply *psy, int limit);
 extern int power_supply_set_online(struct power_supply *psy, bool enable);
 extern int power_supply_set_health_state(struct power_supply *psy, int health);
 extern int power_supply_set_present(struct power_supply *psy, bool enable);
+extern int power_supply_set_chg_present(struct power_supply *psy, bool enable);
 extern int power_supply_set_scope(struct power_supply *psy, int scope);
 extern int power_supply_set_usb_otg(struct power_supply *psy, int otg);
+extern int power_supply_set_usb_owner(struct power_supply *psy,
+			enum power_supply_usb_owner owner);
+extern enum power_supply_usb_owner power_supply_get_usb_owner(
+			struct power_supply *psy);
 extern int power_supply_set_charge_type(struct power_supply *psy, int type);
 extern int power_supply_set_supply_type(struct power_supply *psy,
 					enum power_supply_type supply_type);
