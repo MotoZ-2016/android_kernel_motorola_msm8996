@@ -17,6 +17,9 @@
 #include <linux/device.h>
 #include "mdss_fb.h"
 #include "mdss_hdmi_edid.h"
+#ifdef CONFIG_SLIMPORT_COMMON
+#include <linux/platform_data/slimport_device.h>
+#endif
 
 #define DBC_START_OFFSET 4
 #define EDID_DTD_LEN 18
@@ -1531,6 +1534,98 @@ static void hdmi_edid_add_sink_3d_format(struct hdmi_edid_sink_data *sink_data,
 		string, added ? "added" : "NOT added");
 } /* hdmi_edid_add_sink_3d_format */
 
+static u32 hdmi_edid_filter_mode_format(u32 video_format,
+	struct msm_hdmi_mode_timing_info *timing, u32 rx_bandwidth_khz,
+	const char *color, u32 bits_per_pixel)
+{
+	u32 link_bits_per_pixel;
+	u32 max_pixel_freq;
+	u32 is_supported = 0;
+
+	link_bits_per_pixel = bits_per_pixel * 10 / 8;
+
+#ifdef CONFIG_SLIMPORT_COMMON
+	if (bits_per_pixel == 24)
+		link_bits_per_pixel =
+			sp_get_link_byte_per_pixel(timing->pixel_freq) * 10;
+#endif
+
+	max_pixel_freq = rx_bandwidth_khz / link_bits_per_pixel;
+	is_supported = timing->pixel_freq <= max_pixel_freq;
+
+	DEV_DBG("%s: format: %d %s %s timing:%uKHz rx:%uKHz\n", __func__,
+		video_format, color, msm_hdmi_mode_2string(video_format),
+		timing->pixel_freq, max_pixel_freq);
+
+	if (!is_supported)
+		DEV_WARN("%s: format: %d %s %s pixel_freq %uKHz > rx %uKHz\n",
+			 __func__, video_format, color,
+			 msm_hdmi_mode_2string(video_format),
+			 timing->pixel_freq, max_pixel_freq);
+
+	return is_supported;
+}
+
+static u32 hdmi_edid_filter_mode(struct hdmi_edid_ctrl *edid_ctrl,
+	struct disp_mode_info *disp_mode,
+	u32 rx_bandwidth_khz)
+{
+	struct msm_hdmi_mode_timing_info timing = {0};
+	u32 ret = hdmi_get_supported_mode(&timing,
+					&edid_ctrl->init_data.ds_data,
+					disp_mode->video_format);
+
+	if (ret) {
+		DEV_ERR("%s: format: %d %s failed to get timing\n", __func__,
+			disp_mode->video_format,
+			msm_hdmi_mode_2string(disp_mode->video_format));
+		return 0;
+	}
+
+	if (disp_mode->rgb_support) {
+		disp_mode->rgb_support = hdmi_edid_filter_mode_format(
+			disp_mode->video_format, &timing, rx_bandwidth_khz,
+			"RGB", 24);
+	}
+
+	if (disp_mode->y420_support) {
+		disp_mode->y420_support = hdmi_edid_filter_mode_format(
+			disp_mode->video_format, &timing, rx_bandwidth_khz,
+			"Y420", 16);
+	}
+
+	return disp_mode->rgb_support || disp_mode->y420_support;
+}
+
+static void hdmi_edid_filter_modes(struct hdmi_edid_ctrl *edid_ctrl)
+{
+	int i;
+	struct hdmi_edid_sink_data *sink_data = &edid_ctrl->sink_data;
+	struct disp_mode_info *disp_mode_list = sink_data->disp_mode_list;
+	const u32 num_disp_modes = sink_data->num_of_elements;
+	u32 rx_bandwidth_khz = 0;
+
+#ifdef CONFIG_SLIMPORT_COMMON
+	rx_bandwidth_khz = sp_get_rx_bw_khz();
+#endif /* CONFIG_SLIMPORT_COMMON */
+
+	if (!rx_bandwidth_khz)
+		return;
+
+	sink_data->num_of_elements = 0;
+
+	for (i = 0; i < num_disp_modes; ++i) {
+		if (hdmi_edid_filter_mode(edid_ctrl, &disp_mode_list[i],
+					  rx_bandwidth_khz)) {
+			if (i != sink_data->num_of_elements)
+				disp_mode_list[sink_data->num_of_elements] =
+					disp_mode_list[i];
+			sink_data->num_of_elements++;
+		}
+	}
+}
+
+
 static void hdmi_edid_add_sink_video_format(struct hdmi_edid_ctrl *edid_ctrl,
 	u32 video_format)
 {
@@ -1859,7 +1954,6 @@ static void hdmi_edid_get_display_mode(struct hdmi_edid_ctrl *edid_ctrl)
 {
 	u8 i = 0, offset = 0, std_blk = 0;
 	u32 video_format = HDMI_VFRMT_640x480p60_4_3;
-	u32 has480p = false;
 	u8 len = 0;
 	u8 num_of_cea_blocks;
 	u8 *data_buf;
@@ -1928,9 +2022,6 @@ static void hdmi_edid_get_display_mode(struct hdmi_edid_ctrl *edid_ctrl)
 				video_format == HDMI_VFRMT_2880x576p50_16_9 ||
 				video_format == HDMI_VFRMT_1920x1250i50_16_9)
 				has50hz_mode = true;
-
-			if (video_format == HDMI_VFRMT_640x480p60_4_3)
-				has480p = true;
 		}
 	} else if (!num_of_cea_blocks || read_block0_res) {
 		/* Detailed timing descriptors */
@@ -1954,9 +2045,6 @@ static void hdmi_edid_get_display_mode(struct hdmi_edid_ctrl *edid_ctrl)
 
 			hdmi_edid_add_sink_video_format(edid_ctrl,
 				video_format);
-
-			if (video_format == HDMI_VFRMT_640x480p60_4_3)
-				has480p = true;
 
 			/* Make a note of the preferred video format */
 			if (i == 0) {
@@ -1984,9 +2072,6 @@ static void hdmi_edid_get_display_mode(struct hdmi_edid_ctrl *edid_ctrl)
 
 			hdmi_edid_add_sink_video_format(edid_ctrl,
 				video_format);
-
-			if (video_format == HDMI_VFRMT_640x480p60_4_3)
-				has480p = true;
 
 			/* Make a note of the preferred video format */
 			if (i == 0) {
@@ -2018,8 +2103,6 @@ static void hdmi_edid_get_display_mode(struct hdmi_edid_ctrl *edid_ctrl)
 
 			hdmi_edid_add_sink_video_format(edid_ctrl,
 				video_format);
-			if (video_format == HDMI_VFRMT_640x480p60_4_3)
-				has480p = true;
 
 			/* Make a note of the preferred video format */
 			if (i == 0) {
@@ -2106,15 +2189,6 @@ static void hdmi_edid_get_display_mode(struct hdmi_edid_ctrl *edid_ctrl)
 		if (!rc)
 			pr_debug("%s: 3D formats in VSD\n", __func__);
 	}
-
-	/*
-	 * Need to add default 640 by 480 timings, in case not described
-	 * in the EDID structure.
-	 * All DTV sink devices should support this mode
-	 */
-	if (!has480p)
-		hdmi_edid_add_sink_video_format(edid_ctrl,
-			HDMI_VFRMT_640x480p60_4_3);
 } /* hdmi_edid_get_display_mode */
 
 u32 hdmi_edid_get_raw_data(void *input, u8 *buf, u32 size)
@@ -2241,6 +2315,8 @@ bail:
 
 	if (edid_ctrl->keep_resv_timings)
 		hdmi_edid_add_resv_timings(edid_ctrl);
+
+	hdmi_edid_filter_modes(edid_ctrl);
 
 	return 0;
 
@@ -2437,11 +2513,16 @@ void hdmi_edid_set_video_resolution(void *input, u32 resolution, bool reset)
 	edid_ctrl->video_resolution = resolution;
 
 	if (reset) {
-		edid_ctrl->default_vic = resolution;
-		edid_ctrl->sink_data.num_of_elements = 1;
-		edid_ctrl->sink_data.disp_mode_list[0].video_format =
-			resolution;
-		edid_ctrl->sink_data.disp_mode_list[0].rgb_support = true;
+		if (resolution == HDMI_VFRMT_UNKNOWN)
+			edid_ctrl->sink_data.num_of_elements = 0;
+		else {
+			edid_ctrl->default_vic = resolution;
+			edid_ctrl->sink_data.num_of_elements = 1;
+			edid_ctrl->sink_data.disp_mode_list[0].video_format =
+				resolution;
+			edid_ctrl->sink_data.disp_mode_list[0].rgb_support =
+				true;
+		}
 	}
 } /* hdmi_edid_set_video_resolution */
 

@@ -46,6 +46,68 @@ enum fps_resolution {
 #define SIM_SW_TE_PANEL	"sim-swte"
 #define SIM_HW_TE_PANEL	"sim-hwte"
 
+#define BRIGHTNESS_HBM_ON	0xFFFFFFFE
+#define BRIGHTNESS_HBM_OFF	(BRIGHTNESS_HBM_ON - 1)
+#define HBM_BRIGHTNESS(value) ((value) == HBM_ON_STATE ?\
+			BRIGHTNESS_HBM_ON : BRIGHTNESS_HBM_OFF)
+/* HBM implementation is different, depending on display and backlight hardware
+ * design, which is classified into the following types:
+ * HBM_TYPE_OLED: OLED panel, HBM is controlled by DSI register only, which
+ *     is independent on brightness.
+ * HBM_TYPE_LCD_DCS_WLED: LCD panel, HBM is controlled by DSI register, and
+ *     brightness is decided by WLED IC on I2C/SPI bus.
+ * HBM_TYPE_LCD_DCS_ONLY: LCD panel, brightness/HBM is controlled by DSI
+ *     register only.
+ * HBM_TYPE_LCD_WLED_ONLY: LCD panel, brightness/HBM is controlled by WLED
+ *     IC only.
+ *
+ * Note: brightness must be at maximum while enabling HBM for all LCD panels
+ */
+#define HBM_TYPE_OLED	0
+#define HBM_TYPE_LCD_DCS_WLED	1
+#define HBM_TYPE_LCD_DCS_ONLY	2
+#define HBM_TYPE_LCD_WLED_ONLY	3
+
+enum hbm_state {
+	HBM_OFF_STATE = 0,
+	HBM_ON_STATE,
+	HBM_STATE_NUM
+};
+
+enum acl_state {
+	ACL_OFF_STATE = 0,
+	ACL_ON_STATE,
+	ACL_STATE_NUM
+};
+
+enum cabc_mode {
+	CABC_UI_MODE = 0,
+	CABC_MV_MODE,
+	CABC_DIS_MODE,
+	CABC_MODE_NUM
+};
+
+enum panel_param_id {
+	PARAM_HBM_ID = 0,
+	PARAM_ACL_ID,
+	PARAM_CABC_ID,
+	PARAM_ID_NUM
+};
+
+struct panel_param_val_map {
+	char *name;
+	char *prop;
+};
+
+struct panel_param {
+	const char *param_name;
+	const struct panel_param_val_map *val_map;
+	const u16 val_max;
+	const u16 default_value;
+	u16 value;
+	bool is_supported;
+};
+
 /* panel type list */
 #define NO_PANEL		0xffff	/* No Panel */
 #define MDDI_PANEL		1	/* MDDI */
@@ -248,6 +310,7 @@ struct mdss_intf_recovery {
  *				the panel.
  * @MDSS_EVENT_PANEL_TIMING_SWITCH: Panel timing switch is requested.
  *				Argument provided is new panel timing.
+ * @MDSS_EVENT_ENABLE_TE: Change TE state, used for factory testing only
  */
 enum mdss_intf_events {
 	MDSS_EVENT_RESET = 1,
@@ -278,8 +341,8 @@ enum mdss_intf_events {
 	MDSS_EVENT_DSI_RECONFIG_CMD,
 	MDSS_EVENT_DSI_RESET_WRITE_PTR,
 	MDSS_EVENT_PANEL_TIMING_SWITCH,
-	MDSS_EVENT_UPDATE_PARAMS,
 	MDSS_EVENT_MAX,
+	MDSS_EVENT_ENABLE_TE,
 };
 
 struct lcd_panel_info {
@@ -429,7 +492,6 @@ struct mipi_panel_info {
 	char lp11_init;
 	u32  init_delay;
 	u32  post_init_delay;
-	u8 default_lanes;
 };
 
 struct edp_panel_info {
@@ -728,6 +790,9 @@ struct mdss_panel_info {
 	void *cec_data;
 
 	char panel_name[MDSS_MAX_PANEL_LEN];
+	char panel_family_name[MDSS_MAX_PANEL_LEN];
+	u32 panel_ver;
+	char panel_supplier[8];
 	struct mdss_mdp_pp_tear_check te;
 
 	/*
@@ -767,6 +832,17 @@ struct mdss_panel_info {
 
 	/* HDR properties of display panel*/
 	struct mdss_panel_hdr_properties hdr_properties;
+
+	u32 disp_on_check_val;
+	bool no_panel_read_support;
+	bool no_panel_on_read_support;
+	struct panel_param *param[PARAM_ID_NUM];
+	bool hbm_restore;
+	u32 hbm_type;
+	u32 bl_hbm_off;
+	u32 forced_tx_mode_ftr_enabled;
+	u32 forced_tx_mode_state;
+	bool opr_stats_enabled;
 };
 
 struct mdss_panel_timing {
@@ -807,6 +883,7 @@ struct mdss_panel_data {
 	struct mdss_panel_info panel_info;
 	void (*set_backlight) (struct mdss_panel_data *pdata, u32 bl_level);
 	int (*apply_display_setting)(struct mdss_panel_data *pdata, u32 mode);
+	int (*set_param)(struct mdss_panel_data *pdata, u16 id, u16 value);
 	unsigned char *mmss_cc_base;
 
 	/**
@@ -838,12 +915,50 @@ struct mdss_panel_data {
 	struct completion te_done;
 };
 
+/*
+ * Start OPR buffer size to hold 3 hours of screen on time with 8 second
+ * polling.  Max size is 24 hours of data
+ */
+#define OPR_REC_NUM_PER_HR 450
+#define OPR_REC_NUM_INIT (OPR_REC_NUM_PER_HR * 3)
+#define OPR_REC_NUM_MAX (OPR_REC_NUM_PER_HR * 24)
+
+struct __attribute__((__packed__)) mdss_panel_debugfs_stats_opr_record {
+	time_t time_secs;
+	u8 w;
+	u8 r;
+	u8 g;
+	u8 b;
+	u8 brightness;
+};
+
+struct mdss_panel_debugfs_stats_opr {
+	struct mutex opr_lock;
+	int collected_recs;
+	int max_recs;
+	int alloc_recs;
+	struct mdss_panel_debugfs_stats_opr_record *recs;
+};
+
+struct mdss_panel_debugfs_stats {
+	struct mdss_panel_debugfs_stats_opr *opr;
+	u32 wait4pingpong_timeout_cnt;
+	u32 wait4pingpong_timeout_cnt_prev;
+	u32 fifo_err_cnt_prev;
+	u32 phy_err_cnt_prev;
+	u32 err_cnt_prev;
+};
+int mdss_panel_debufs_stats_opr_alloc(struct mdss_panel_debugfs_stats_opr *opr,
+				int new_alloc, bool copy);
+
 struct mdss_panel_debugfs_info {
 	struct dentry *root;
 	struct dentry *parent;
 	struct mdss_panel_info panel_info;
 	u32 override_flag;
 	struct mdss_panel_debugfs_info *next;
+	struct mdss_panel_data *rt_pdata;
+	struct mdss_panel_debugfs_stats stats;
 };
 
 /**
@@ -1220,4 +1335,25 @@ static inline struct mdss_panel_timing *mdss_panel_get_timing_by_name(
 		struct mdss_panel_data *pdata,
 		const char *name) { return NULL; };
 #endif
+
+static inline bool mdss_panel_param_is_supported(struct mdss_panel_info *p,
+	u16 id)
+{
+	if (id < PARAM_ID_NUM && p && p->param[id] &&
+		p->param[id]->is_supported)
+		return true;
+
+	return false;
+};
+
+static inline bool mdss_panel_param_is_hbm_on(struct mdss_panel_info *p)
+{
+	u16 id = PARAM_HBM_ID;
+
+	if (mdss_panel_param_is_supported(p, id) &&
+		p->param[id]->value == HBM_ON_STATE)
+		return true;
+
+	return false;
+};
 #endif /* MDSS_PANEL_H */

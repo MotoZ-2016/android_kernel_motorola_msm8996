@@ -9,6 +9,7 @@ obj-$(CONFIG_LOGO)		  += logo/
 obj-y				  += backlight/
 
 obj-y				  += fbdev/
+obj-y				  += slimport/
 
 obj-$(CONFIG_VIDEOMODE_HELPERS) += display_timing.o videomode.o
 ifeq ($(CONFIG_OF),y)
@@ -16,3 +17,4 @@ obj-$(CONFIG_VIDEOMODE_HELPERS) += of_display_timing.o of_videomode.o
 endif
 
 obj-$(CONFIG_MSM_MDSS_PLL)        += msm/mdss/mdss_io_util.o
+obj-$(CONFIG_PANEL_NOTIFICATIONS) += panel_notifier.o

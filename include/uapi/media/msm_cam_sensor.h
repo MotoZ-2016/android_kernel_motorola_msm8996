@@ -173,6 +173,18 @@ enum cci_i2c_master_t {
 	MASTER_MAX,
 };
 
+enum flash_position {
+	REAR_FLASH,
+	FRONT_FLASH,
+	INVALID_FLASH,
+};
+
+enum mux_sel_option {
+	NO_MUX_SEL,
+	USE_MUX_SEL,
+	INVALID_MUX_SEL,
+};
+
 struct msm_camera_i2c_array_write_config {
 	struct msm_camera_i2c_reg_setting conf_array;
 	uint16_t slave_addr;
@@ -214,6 +226,7 @@ struct msm_sensor_info_t {
 	uint32_t sensor_mount_angle;
 	int modes_supported;
 	enum camb_position_t position;
+	int is_rear_prox_interfering;
 };
 
 struct camera_vreg_t {
@@ -260,6 +273,7 @@ enum eeprom_cfg_type_t {
 	CFG_EEPROM_WRITE_DATA,
 	CFG_EEPROM_GET_MM_INFO,
 	CFG_EEPROM_INIT,
+	CFG_EEPROM_REINIT
 };
 
 struct eeprom_get_t {
@@ -353,6 +367,7 @@ enum msm_actuator_cfg_type_t {
 	CFG_ACTUATOR_POWERDOWN,
 	CFG_ACTUATOR_POWERUP,
 	CFG_ACTUATOR_INIT,
+	CFG_GET_POSITION,
 };
 
 struct msm_ois_opcode {
@@ -378,6 +393,7 @@ enum msm_ois_cfg_download_type_t {
 enum msm_ois_i2c_operation {
 	MSM_OIS_WRITE = 0,
 	MSM_OIS_POLL,
+	MSM_OIS_READ,
 };
 
 struct reg_settings_ois_t {
@@ -412,6 +428,11 @@ struct msm_actuator_move_params_t {
 	struct damping_params_t *ringing_params;
 };
 
+struct msm_mot_actuator_tuning_params_t {
+	int16_t infinity_dac;
+	int16_t macro_dac;
+};
+
 struct msm_actuator_tuning_params_t {
 	int16_t initial_code;
 	uint16_t pwd_step;
@@ -427,6 +448,15 @@ struct park_lens_data_t {
 	uint32_t max_step;
 };
 
+struct msm_actuator_get_pos_cfg_t {
+	uint16_t target_supported;
+	uint16_t target_reg;
+	uint16_t target_data_shift;
+	uint16_t actual_supported;
+	uint16_t actual_reg;
+	uint16_t actual_data_shift;
+};
+
 struct msm_actuator_params_t {
 	enum actuator_type act_type;
 	uint8_t reg_tbl_size;
@@ -439,11 +469,13 @@ struct msm_actuator_params_t {
 	struct msm_actuator_reg_params_t *reg_tbl_params;
 	struct reg_settings_t *init_settings;
 	struct park_lens_data_t park_lens;
+	struct msm_actuator_get_pos_cfg_t get_pos_cfg;
 };
 
 struct msm_actuator_set_info_t {
 	struct msm_actuator_params_t actuator_params;
 	struct msm_actuator_tuning_params_t af_tuning_params;
+	struct msm_mot_actuator_tuning_params_t mot_af_tuning_params;
 };
 
 struct msm_actuator_get_info_t {
@@ -498,6 +530,13 @@ struct msm_actuator_set_position_t {
 	uint16_t delay[MAX_NUMBER_OF_STEPS];
 };
 
+struct msm_actuator_get_position_t {
+	uint16_t target_supported;
+	int32_t  target;
+	uint16_t actual_supported;
+	int32_t  actual;
+};
+
 struct msm_actuator_cfg_data {
 	int cfgtype;
 	uint8_t is_af_supported;
@@ -506,6 +545,7 @@ struct msm_actuator_cfg_data {
 		struct msm_actuator_set_info_t set_info;
 		struct msm_actuator_get_info_t get_info;
 		struct msm_actuator_set_position_t setpos;
+		struct msm_actuator_get_position_t getpos;
 		enum af_camera_name cam_name;
 	} cfg;
 };
@@ -537,9 +577,12 @@ struct msm_flash_cfg_data_t {
 	enum msm_flash_cfg_type_t cfg_type;
 	int32_t flash_current[MAX_LED_TRIGGERS];
 	int32_t flash_duration[MAX_LED_TRIGGERS];
+	enum flash_position position;
+	enum mux_sel_option mux_sel;
 	union {
 		struct msm_flash_init_info_t *flash_init_info;
 		struct msm_camera_i2c_reg_setting_array *settings;
+		struct msm_camera_i2c_read_config *read_config;
 	} cfg;
 };
 

@@ -82,6 +82,26 @@
  */
 #define MDP_TIME_PERIOD_CALC_FPS_US	1000000
 
+#define __PARAM_SYSFS_DEFINITION(_name, _id) \
+static ssize_t _name##_show(struct device *dev, \
+		struct device_attribute *attr, char *buf) \
+{ \
+	const char *name; \
+	ssize_t ret; \
+	ret = mdss_fb_get_param(dev, _id, &name); \
+	if (ret < 0) \
+		return ret; \
+	return snprintf(buf, PAGE_SIZE, "%s\n", name); \
+} \
+static ssize_t _name##_store(struct device *dev, \
+		struct device_attribute *attr, \
+		const char *buf, size_t count) \
+{ \
+	ssize_t ret; \
+	ret = mdss_fb_set_param(dev, _id, buf); \
+	return ret ? ret : count; \
+}
+
 static struct fb_info *fbi_list[MAX_FBI_LIST];
 static int fbi_list_index;
 
@@ -926,13 +946,303 @@ static struct attribute_group mdss_fb_attr_group = {
 	.attrs = mdss_fb_attrs,
 };
 
+static struct mdss_panel_info *get_panel_info(struct device *dev)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	struct mdss_panel_info *pinfo = mfd->panel_info;
+
+	return pinfo;
+}
+
+static ssize_t panel_name_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct mdss_panel_info *pinfo = get_panel_info(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", pinfo->panel_family_name);
+}
+
+static ssize_t panel_ver_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct mdss_panel_info *pinfo = get_panel_info(dev);
+
+	return snprintf(buf, PAGE_SIZE, "0x%08x\n", pinfo->panel_ver);
+}
+
+static ssize_t panel_supplier_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct mdss_panel_info *pinfo = get_panel_info(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", pinfo->panel_supplier);
+}
+
+static ssize_t panel_man_id_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct mdss_panel_info *pinfo = get_panel_info(dev);
+
+	return snprintf(buf, PAGE_SIZE, "0x%02x\n",
+		pinfo->panel_ver & 0xff);
+}
+
+static ssize_t panel_controller_ver_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct mdss_panel_info *pinfo = get_panel_info(dev);
+
+	return snprintf(buf, PAGE_SIZE, "0x%02x\n",
+		(pinfo->panel_ver & 0xff00) >> 8);
+}
+
+static ssize_t panel_controller_drv_ver_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct mdss_panel_info *pinfo = get_panel_info(dev);
+
+	return snprintf(buf, PAGE_SIZE, "0x%02x\n",
+		(pinfo->panel_ver & 0xff0000) >> 16);
+}
+static DEVICE_ATTR(panel_name, S_IRUGO, panel_name_show, NULL);
+static DEVICE_ATTR(panel_ver, S_IRUGO, panel_ver_show, NULL);
+static DEVICE_ATTR(man_id, S_IRUGO, panel_man_id_show, NULL);
+static DEVICE_ATTR(controller_ver, S_IRUGO, panel_controller_ver_show, NULL);
+static DEVICE_ATTR(panel_supplier, S_IRUGO,
+					panel_supplier_show, NULL);
+static DEVICE_ATTR(controller_drv_ver, S_IRUGO,
+					panel_controller_drv_ver_show, NULL);
+static struct attribute *panel_id_attrs[] = {
+	&dev_attr_panel_name.attr,
+	&dev_attr_panel_ver.attr,
+	&dev_attr_panel_supplier.attr,
+	&dev_attr_man_id.attr,
+	&dev_attr_controller_ver.attr,
+	&dev_attr_controller_drv_ver.attr,
+	NULL,
+};
+
+static struct attribute_group panel_id_attr_group = {
+	.attrs = panel_id_attrs,
+};
+
+static struct panel_param *mdss_fb_dev_to_param(struct device *dev, u16 id)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	struct mdss_panel_info *pinfo = mfd->panel_info;
+	struct panel_param *param;
+
+	if (!pinfo) {
+		pr_err("pinfo is null\n");
+		return NULL;
+	}
+
+	if (id >= PARAM_ID_NUM) {
+		pr_err("panel param id %d not available\n", id);
+		return NULL;
+	}
+
+	param = pinfo->param[id];
+	if (!param)
+		pr_err("panel param is null\n");
+
+	return param;
+}
+
+static int mdss_fb_set_hw_param(struct msm_fb_data_type *mfd,
+		u16 id, u16 value)
+{
+	struct mdss_panel_data *pdata = dev_get_platdata(&mfd->pdev->dev);
+	struct mdss_panel_info *pinfo = mfd->panel_info;
+	struct panel_param *param;
+	int ret = -EINVAL;
+	const char *param_name, *val_name;
+
+	if (!pdata || !pdata->set_param) {
+		pr_err("panel data is null\n");
+		return -EINVAL;
+	}
+
+	param = pinfo->param[id];
+	if (!param)
+		return -EINVAL;
+
+	param_name = param->param_name;
+	if (value >= param->val_max) {
+		pr_err("invalid value %d for %s\n", value, param_name);
+		return -EINVAL;
+	}
+	val_name = param->val_map[value].name;
+
+	ret = pdata->set_param(pdata, id, value);
+	if (ret)
+		pr_err("failed to set %s to %s\n", param_name, val_name);
+	else
+		pr_info("%s = %s\n", param_name, val_name);
+
+	return ret;
+}
+
+static int __maybe_unused mdss_fb_set_param(struct device *dev,
+		u16 id, const char *name)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
+	struct mdss_panel_data *pdata = dev_get_platdata(&mfd->pdev->dev);
+	struct panel_param *param;
+	const char *val_name;
+	int ret = -EINVAL;
+	u16 value;
+
+	if (!ctl) {
+		pr_err("ctl data is null\n");
+		return -EINVAL;
+	}
+
+	param = mdss_fb_dev_to_param(dev, id);
+	if (!param)
+		return -EINVAL;
+
+	for (value = 0; value < param->val_max; value++) {
+		val_name = param->val_map[value].name;
+		if (val_name && !strncmp(name, val_name, strlen(val_name)))
+			break;
+	}
+
+	mutex_lock(&mfd->param_lock);
+
+	if (param->value == value)
+		goto unlock;
+
+	if (id == PARAM_HBM_ID) {
+		mutex_lock(&mfd->bl_lock);
+		if (mdss_fb_is_power_on(mfd) && !mfd->panel_info->hbm_restore) {
+			ret = mdss_fb_set_hw_param(mfd, id, value);
+			if (pdata && pdata->set_backlight)
+				pdata->set_backlight(pdata,
+					HBM_BRIGHTNESS(value));
+		}
+		param->value = value;
+		mutex_unlock(&mfd->bl_lock);
+		goto unlock;
+	}
+
+	if (mdss_fb_is_power_on(mfd))
+		ret = mdss_fb_set_hw_param(mfd, id, value);
+	param->value = value;
+
+unlock:
+	mutex_unlock(&mfd->param_lock);
+
+	return ret;
+}
+
+static int __maybe_unused mdss_fb_get_param(struct device *dev,
+		u16 id, const char **name)
+{
+	struct panel_param *param = mdss_fb_dev_to_param(dev, id);
+
+	if (!param || !name) {
+		pr_err("param or name is null\n");
+		return -EINVAL;
+	}
+
+	*name = param->val_map[param->value].name;
+	return 0;
+}
+
+static void mdss_fb_restore_param_hbm(struct msm_fb_data_type *mfd)
+{
+	struct mdss_panel_info *pinfo = mfd->panel_info;
+	struct panel_param *param;
+	struct mdss_panel_data *pdata = dev_get_platdata(&mfd->pdev->dev);
+
+	param = pinfo->param[PARAM_HBM_ID];
+	if (!param || !pinfo->hbm_restore)
+		return;
+
+	mutex_lock(&mfd->param_lock);
+	mutex_lock(&mfd->bl_lock);
+
+	pinfo->hbm_restore = false;
+	mdss_fb_set_hw_param(mfd, PARAM_HBM_ID, param->value);
+	if (pdata && pdata->set_backlight)
+		pdata->set_backlight(pdata, HBM_BRIGHTNESS(param->value));
+
+	mutex_unlock(&mfd->bl_lock);
+	mutex_unlock(&mfd->param_lock);
+}
+
+static void mdss_fb_restore_param(struct msm_fb_data_type *mfd)
+{
+	struct mdss_panel_info *pinfo = mfd->panel_info;
+	struct panel_param *param;
+	int i;
+
+	mutex_lock(&mfd->param_lock);
+	for (i = 0; i < PARAM_ID_NUM; i++) {
+		param = pinfo->param[i];
+		if (!param || param->value == param->default_value)
+			continue;
+		if (i == PARAM_HBM_ID) {
+			pinfo->hbm_restore = true;
+			continue;
+		}
+		mdss_fb_set_hw_param(mfd, i, param->value);
+	}
+	mutex_unlock(&mfd->param_lock);
+}
+
+__PARAM_SYSFS_DEFINITION(hbm, PARAM_HBM_ID)
+__PARAM_SYSFS_DEFINITION(acl, PARAM_ACL_ID)
+__PARAM_SYSFS_DEFINITION(cabc, PARAM_CABC_ID)
+
+static struct device_attribute param_attrs[PARAM_ID_NUM] = {
+	__ATTR(hbm, S_IWUSR | S_IWGRP | S_IRUSR | S_IRGRP, hbm_show, hbm_store),
+	__ATTR(acl, S_IWUSR | S_IWGRP | S_IRUSR | S_IRGRP,
+		acl_show, acl_store),
+	__ATTR(cabc, S_IWUSR | S_IWGRP | S_IRUSR | S_IRGRP,
+		cabc_show, cabc_store),
+};
+
+static int mdss_fb_create_param_sysfs(struct msm_fb_data_type *mfd)
+{
+	int i, rc = 0;
+
+	for (i = 0; i < PARAM_ID_NUM; i++) {
+		if (!mdss_panel_param_is_supported(mfd->panel_info, i))
+			continue;
+		rc = device_create_file(mfd->fbi->dev, &param_attrs[i]);
+		if (rc) {
+			pr_err("failed to create sysfs for id %d\n", i);
+			break;
+		}
+	}
+	return rc;
+}
+
 static int mdss_fb_create_sysfs(struct msm_fb_data_type *mfd)
 {
 	int rc;
 
 	rc = sysfs_create_group(&mfd->fbi->dev->kobj, &mdss_fb_attr_group);
-	if (rc)
+	if (rc) {
 		pr_err("sysfs group creation failed, rc=%d\n", rc);
+		goto err;
+	}
+
+	rc = sysfs_create_group(&mfd->fbi->dev->kobj, &panel_id_attr_group);
+	if (rc)
+		pr_err("panel id group creation failed, rc=%d\n", rc);
+
+	rc = mdss_fb_create_param_sysfs(mfd);
+	if (rc)
+		pr_err("panel parameter sysfs creation failed, rc=%d\n", rc);
+
+err:
 	return rc;
 }
 
@@ -1290,6 +1600,7 @@ static int mdss_fb_probe(struct platform_device *pdev)
 	mutex_init(&mfd->bl_lock);
 	mutex_init(&mfd->mdss_sysfs_lock);
 	mutex_init(&mfd->switch_lock);
+	mutex_init(&mfd->param_lock);
 
 	fbi_list[fbi_list_index++] = fbi;
 
@@ -1730,6 +2041,8 @@ void mdss_fb_update_backlight(struct msm_fb_data_type *mfd)
 	u32 temp;
 	bool bl_notify = false;
 
+	mdss_fb_restore_param_hbm(mfd);
+
 	if (mfd->unset_bl_level == U32_MAX)
 		return;
 	mutex_lock(&mfd->bl_lock);
@@ -1900,6 +2213,7 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 
 	if (mfd->mdp.on_fnc) {
 		struct mdss_panel_info *panel_info = mfd->panel_info;
+		int panel_dead = mfd->panel_info->panel_dead;
 		struct fb_var_screeninfo *var = &mfd->fbi->var;
 
 		ret = mfd->mdp.on_fnc(mfd);
@@ -1909,7 +2223,8 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 		}
 
 		mfd->panel_power_state = MDSS_PANEL_POWER_ON;
-		mfd->panel_info->panel_dead = false;
+		if (panel_dead)
+			mfd->panel_info->panel_dead = false;
 		mutex_lock(&mfd->update.lock);
 		mfd->update.type = NOTIFY_TYPE_UPDATE;
 		mfd->update.is_suspend = 0;
@@ -1930,6 +2245,8 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 
 	/* Reset the backlight only if the panel was off */
 	if (mdss_panel_is_power_off(cur_power_state)) {
+		mdss_fb_restore_param(mfd);
+
 		mutex_lock(&mfd->bl_lock);
 		if (!mfd->allow_bl_update) {
 			mfd->allow_bl_update = true;
@@ -2065,6 +2382,7 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 	int ret;
 	struct mdss_panel_data *pdata;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
+	int panel_dead = mfd->panel_info->panel_dead;
 
 	ret = mdss_fb_pan_idle(mfd);
 	if (ret) {
@@ -2099,6 +2417,13 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 
 	ret = mdss_fb_blank_sub(blank_mode, info, mfd->op_enable);
 
+	if (blank_mode == FB_BLANK_UNBLANK && !panel_dead &&
+		mfd->panel_info->panel_dead) {
+		pr_err("%s: Panel is dead, attempt recovery\n", __func__);
+		mdss_fb_blank_sub(FB_BLANK_POWERDOWN, info, 1);
+		usleep_range(225 * 1000, 225 * 1000);
+		mdss_fb_blank_sub(FB_BLANK_UNBLANK, info, 1);
+	}
 end:
 	mutex_unlock(&mfd->mdss_sysfs_lock);
 	return ret;
@@ -2788,9 +3113,10 @@ static int mdss_fb_release_all(struct fb_info *info, bool release_all)
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
 	struct mdss_fb_file_info *file_info = NULL, *temp_file_info = NULL;
 	struct file *file = info->file;
-	int ret = 0;
+	int blank, ret = 0;
 	bool node_found = false;
 	struct task_struct *task = current->group_leader;
+	struct fb_event event;
 
 	if (!mfd->ref_cnt) {
 		pr_info("try to close unopened fb %d! from pid:%d name:%s\n",
@@ -2856,13 +3182,25 @@ static int mdss_fb_release_all(struct fb_info *info, bool release_all)
 		 */
 		mdss_fb_set_backlight(mfd, 0);
 
+		blank = FB_BLANK_POWERDOWN;
+		event.info = info;
+		event.data = &blank;
+
+		if (mfd->index == 0)
+			fb_notifier_call_chain(FB_EARLY_EVENT_BLANK, &event);
+
 		ret = mdss_fb_blank_sub(FB_BLANK_POWERDOWN, info,
 			mfd->op_enable);
 		if (ret) {
+			if (mfd->index == 0)
+				fb_notifier_call_chain(FB_R_EARLY_EVENT_BLANK,
+					&event);
 			pr_err("can't turn off fb%d! rc=%d current process=%s pid=%d\n",
 			      mfd->index, ret, task->comm, current->tgid);
 			return ret;
-		}
+		} else if (mfd->index == 0)
+			fb_notifier_call_chain(FB_EVENT_BLANK, &event);
+
 		if (mfd->fb_ion_handle)
 			mdss_fb_free_fb_ion_memory(mfd);
 
@@ -4020,10 +4358,6 @@ static int mdss_fb_set_par(struct fb_info *info)
 	if (mfd->panel_reconfig || (mfd->fb_imgType != old_imgType)) {
 		mdss_fb_blank_sub(FB_BLANK_POWERDOWN, info, mfd->op_enable);
 		mdss_fb_var_to_panelinfo(var, mfd->panel_info);
-		if (mfd->panel_info->is_dba_panel &&
-			mdss_fb_send_panel_event(mfd, MDSS_EVENT_UPDATE_PARAMS,
-							mfd->panel_info))
-			pr_debug("Failed to send panel event UPDATE_PARAMS\n");
 		mdss_fb_blank_sub(FB_BLANK_UNBLANK, info, mfd->op_enable);
 		mfd->panel_reconfig = false;
 	}
@@ -4769,6 +5103,28 @@ static int mdss_fb_mode_switch(struct msm_fb_data_type *mfd, u32 mode)
 	return ret;
 }
 
+
+static int mdss_fb_set_persistence_mode(struct msm_fb_data_type *mfd, u32 mode)
+{
+	struct mdss_panel_info *pinfo = NULL;
+	struct mdss_panel_data *pdata;
+	int ret = 0;
+
+	if (!mfd || !mfd->panel_info)
+		return -EINVAL;
+
+	pinfo = mfd->panel_info;
+
+	mutex_lock(&mfd->bl_lock);
+	pdata = dev_get_platdata(&mfd->pdev->dev);
+	if ((pdata) && (pdata->apply_display_setting)) {
+		ret = pdata->apply_display_setting(pdata, mode);
+	}
+	mutex_unlock(&mfd->bl_lock);
+
+	return ret;
+}
+
 static int __ioctl_wait_idle(struct msm_fb_data_type *mfd, u32 cmd)
 {
 	int ret = 0;
@@ -4826,6 +5182,7 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	int ret = -ENOSYS;
 	struct mdp_buf_sync buf_sync;
 	unsigned int dsi_mode = 0;
+	unsigned int persistence_mode = 0;
 	struct mdss_panel_data *pdata = NULL;
 
 	if (!info || !info->par)
@@ -4903,6 +5260,15 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 
 	case MSMFB_ASYNC_POSITION_UPDATE:
 		ret = mdss_fb_async_position_update_ioctl(info, argp);
+		break;
+
+	case MSMFB_SET_PERSISTENCE_MODE:
+		ret = copy_from_user(&persistence_mode, argp, sizeof(persistence_mode));
+		if (ret) {
+			pr_err("%s: MSMFB_SET_PERSISTENCE_MODE ioctl failed\n", __func__);
+			goto exit;
+		}
+		ret = mdss_fb_set_persistence_mode(mfd, persistence_mode);
 		break;
 
 	default:

@@ -33,6 +33,7 @@ endmenu
 
 source "drivers/video/backlight/Kconfig"
 source "drivers/video/adf/Kconfig"
+source "drivers/video/slimport/Kconfig"
 
 config VGASTATE
        tristate
@@ -66,5 +67,10 @@ if FB || SGI_NEWPORT_CONSOLE
 
 endif
 
+config PANEL_NOTIFICATIONS
+	bool 'Panel notifications'
+	default n
+	---help---
+	Panel notifications framework
 
 endmenu

@@ -94,8 +94,16 @@ static void mdss_dsi_pm_qos_update_request(int val)
 	pm_qos_update_request(&mdss_dsi_pm_qos_request, val);
 }
 
-static int mdss_dsi_pinctrl_set_state(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
-					bool active);
+static int mdss_dsi_hndl_enable_te(struct mdss_dsi_ctrl_pdata *ctrl,
+				int enable)
+{
+	if (enable)
+		mdss_dsi_set_tear_on(ctrl);
+	else
+		mdss_dsi_set_tear_off(ctrl);
+
+	return 0;
+}
 
 static struct mdss_dsi_ctrl_pdata *mdss_dsi_get_ctrl(u32 ctrl_id)
 {
@@ -292,9 +300,6 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 		ret = 0;
 	}
 
-	if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
-		pr_debug("reset disable: pinctrl not enabled\n");
-
 	ret = msm_dss_enable_vreg(
 		ctrl_pdata->panel_power_data.vreg_config,
 		ctrl_pdata->panel_power_data.num_vreg, 0);
@@ -335,9 +340,6 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 	 */
 	if (pdata->panel_info.cont_splash_enabled ||
 		!pdata->panel_info.mipi.lp11_init) {
-		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
-			pr_debug("reset enable: pinctrl not enabled\n");
-
 		ret = mdss_dsi_panel_reset(pdata, 1);
 		if (ret)
 			pr_err("%s: Panel reset failed. rc=%d\n",
@@ -1241,6 +1243,7 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 
 	pr_debug("%s+: ctrl=%pK ndx=%d power_state=%d\n",
 		__func__, ctrl_pdata, ctrl_pdata->ndx, power_state);
+	pr_info("%s[%d]+.\n", __func__, ctrl_pdata->ndx);
 
 	if (power_state == panel_info->panel_power_state) {
 		pr_debug("%s: No change in power state %d -> %d\n", __func__,
@@ -1422,9 +1425,18 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	cur_power_state = pdata->panel_info.panel_power_state;
 	pr_debug("%s+: ctrl=%pK ndx=%d cur_power_state=%d\n", __func__,
 		ctrl_pdata, ctrl_pdata->ndx, cur_power_state);
+	pr_info("%s[%d]+.\n", __func__, ctrl_pdata->ndx);
 
 	pinfo = &pdata->panel_info;
 	mipi = &pdata->panel_info.mipi;
+
+	if (ctrl_pdata->ds_registered) {
+		mipi->force_clk_lane_hs =
+			mdss_dba_utils_get_dsi_hs_clk_always_on(
+							pinfo->dba_data);
+		pr_debug("%s: force_clk_lane_hs =%d\n",
+					__func__, mipi->force_clk_lane_hs);
+	}
 
 	if (mdss_dsi_is_panel_on_interactive(pdata)) {
 		/*
@@ -1487,8 +1499,6 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	 * data lanes for LP11 init
 	 */
 	if (mipi->lp11_init) {
-		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
-			pr_debug("reset enable: pinctrl not enabled\n");
 		mdss_dsi_panel_reset(pdata, 1);
 	}
 
@@ -1513,7 +1523,7 @@ end:
 	return ret;
 }
 
-static int mdss_dsi_pinctrl_set_state(
+int mdss_dsi_pinctrl_set_state(
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 	bool active)
 {
@@ -2249,23 +2259,6 @@ static int mdss_dsi_check_params(struct mdss_dsi_ctrl_pdata *ctrl, void *arg)
 	return rc;
 }
 
-#ifdef TARGET_HW_MDSS_HDMI
-static void mdss_dsi_update_params(struct mdss_dsi_ctrl_pdata *ctrl, void *arg)
-{
-	struct mdss_panel_info *pinfo;
-
-	if (!ctrl || !arg)
-		return;
-
-	pinfo = &ctrl->panel_data.panel_info;
-	mdss_dba_update_lane_cfg(pinfo);
-}
-#else
-static void mdss_dsi_update_params(struct mdss_dsi_ctrl_pdata *ctrl, void *arg)
-{
-}
-#endif
-
 static int mdss_dsi_dfps_config(struct mdss_panel_data *pdata, int new_fps)
 {
 	int rc = 0;
@@ -2618,14 +2611,10 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 	MDSS_XLOG(event, arg, ctrl_pdata->ndx, 0x3333);
 
 	switch (event) {
-	case MDSS_EVENT_UPDATE_PARAMS:
-		pr_debug("%s:Entered Case MDSS_EVENT_UPDATE_PARAMS\n",
-				__func__);
-		mdss_dsi_update_params(ctrl_pdata, arg);
-		break;
 	case MDSS_EVENT_CHECK_PARAMS:
 		pr_debug("%s:Entered Case MDSS_EVENT_CHECK_PARAMS\n", __func__);
-		if (mdss_dsi_check_params(ctrl_pdata, arg)) {
+		if (pinfo->is_dba_panel ||
+		    mdss_dsi_check_params(ctrl_pdata, arg)) {
 			ctrl_pdata->update_phy_timing = true;
 			/*
 			 * Call to MDSS_EVENT_CHECK_PARAMS expects
@@ -2633,6 +2622,11 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 			 * in panel timing parameters.
 			 */
 			rc = 1;
+
+			if (ctrl_pdata->ds_registered)
+				mdss_dba_utils_reconfigure_dsi(pinfo->dba_data,
+					pinfo);
+
 		}
 		ctrl_pdata->refresh_clk_rate = true;
 		break;
@@ -2708,6 +2702,10 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		break;
 	case MDSS_EVENT_ENABLE_PARTIAL_ROI:
 		rc = mdss_dsi_ctl_partial_roi(pdata);
+		break;
+	case MDSS_EVENT_ENABLE_TE:
+		rc = mdss_dsi_hndl_enable_te(ctrl_pdata,
+				(int) (unsigned long) arg);
 		break;
 	case MDSS_EVENT_DSI_RESET_WRITE_PTR:
 		rc = mdss_dsi_reset_write_ptr(pdata);
@@ -2808,6 +2806,33 @@ static struct device_node *mdss_dsi_pref_prim_panel(
 		pr_err("%s:can't find panel phandle\n", __func__);
 
 	return dsi_pan_node;
+}
+
+int mdss_dsi_ioctl_handler(struct mdss_panel_data *pdata, u32 cmd, void *arg)
+{
+	int rc = -ENOSYS;
+	struct msmfb_reg_access reg_access;
+
+	if (mdss_panel_is_power_off(pdata->panel_info.panel_power_state)) {
+		pr_err("%s: Panel is off\n", __func__);
+		return -EPERM;
+	}
+
+	switch (cmd) {
+	case MSMFB_REG_WRITE:
+	case MSMFB_REG_READ:
+		if (copy_from_user(&reg_access, arg, sizeof(reg_access)))
+			return -EFAULT;
+
+		rc = mdss_dsi_panel_ioctl_handler(pdata, cmd, arg);
+		break;
+	default:
+		pr_err("%s: unsupport ioctl =0x%x\n", __func__, cmd);
+		rc = -EFAULT;
+		break;
+	}
+
+	return rc;
 }
 
 /**
@@ -2955,6 +2980,14 @@ static struct device_node *mdss_dsi_config_panel(struct platform_device *pdev,
 		/* dsi panel cfg not present */
 		pr_warn("%s:%d:dsi specific cfg not present\n",
 			__func__, __LINE__);
+
+	/* Parse panel config */
+	rc = mdss_panel_parse_panel_config_dt(ctrl_pdata);
+	if (rc) {
+		pr_err("%s: failed to parse panel config dt, rc = %d\n",
+								__func__, rc);
+		return NULL;
+	}
 
 	/* find panel device node */
 	dsi_pan_node = mdss_dsi_find_panel_of_node(pdev, panel_cfg);
@@ -4241,7 +4274,7 @@ int dsi_panel_device_register(struct platform_device *ctrl_pdev,
 
 	if (ctrl_pdata->status_mode == ESD_REG ||
 			ctrl_pdata->status_mode == ESD_REG_NT35596)
-		ctrl_pdata->check_status = mdss_dsi_reg_status_check;
+		ctrl_pdata->check_status = mdss_dsi_reg_status_check_dropbox;
 	else if (ctrl_pdata->status_mode == ESD_BTA)
 		ctrl_pdata->check_status = mdss_dsi_bta_status_check;
 
@@ -4300,6 +4333,10 @@ int dsi_panel_device_register(struct platform_device *ctrl_pdev,
 
 	pr_info("%s: Continuous splash %s\n", __func__,
 		pinfo->cont_splash_enabled ? "enabled" : "disabled");
+
+	if (pinfo->cont_splash_enabled &&
+		pinfo->forced_tx_mode_ftr_enabled)
+		mdss_dsi_panel_forced_tx_mode_set(pinfo, true);
 
 	rc = mdss_register_panel(ctrl_pdev, &(ctrl_pdata->panel_data));
 	if (rc) {

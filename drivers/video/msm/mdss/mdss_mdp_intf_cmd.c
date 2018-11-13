@@ -22,6 +22,7 @@
 #include "mdss_mdp_trace.h"
 #include "mdss_dsi_clk.h"
 #include <linux/interrupt.h>
+#include "mdss_dropbox.h"
 
 #define MAX_RECOVERY_TRIALS 10
 #define MAX_SESSIONS 2
@@ -1206,8 +1207,7 @@ static void mdss_mdp_cmd_pingpong_done(void *arg)
 			       atomic_read(&ctx->koff_cnt));
 		if (sync_ppdone) {
 			atomic_inc(&ctx->pp_done_cnt);
-			if (!ctl->commit_in_progress)
-				schedule_work(&ctx->pp_done_work);
+			schedule_work(&ctx->pp_done_work);
 
 			mdss_mdp_resource_control(ctl,
 				MDP_RSRC_CTL_EVENT_PP_DONE);
@@ -1950,6 +1950,10 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 				ctl->num, rc, ctx->pp_timeout_report_cnt,
 				atomic_read(&ctx->koff_cnt));
 
+		if (pdata->panel_info.debugfs_info)
+			pdata->panel_info.debugfs_info->
+				stats.wait4pingpong_timeout_cnt++;
+
 		/* enable TE irq to check if it is coming from the panel */
 		te_irq = gpio_to_irq(pdata->panel_te_gpio);
 		enable_irq(te_irq);
@@ -1965,6 +1969,12 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 			mdss_fb_report_panel_dead(ctl->mfd);
 		} else if (ctx->pp_timeout_report_cnt == 0) {
 			MDSS_XLOG(0xbad);
+			MDSS_XLOG_TOUT_HANDLER_MMI("mdp",
+						"dsi0_ctrl", "dsi0_phy",
+						"dsi1_ctrl", "dsi1_phy");
+			mdss_dropbox_report_event_ratelimit(
+				MDSS_DROPBOX_MSG_PP_TO, 1,
+				&mdss_dropbox_global_rl);
 		} else if (ctx->pp_timeout_report_cnt == MAX_RECOVERY_TRIALS) {
 			MDSS_XLOG(0xbad2);
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
@@ -3013,6 +3023,7 @@ int mdss_mdp_cmd_stop(struct mdss_mdp_ctl *ctl, int panel_power_state)
 
 	mutex_lock(&ctl->offlock);
 	mutex_lock(&cmd_off_mtx);
+	mutex_lock(&ctl->mfd->param_lock);
 	if (mdss_panel_is_power_off(panel_power_state)) {
 		/* Transition to display off */
 		send_panel_events = true;
@@ -3136,6 +3147,7 @@ end:
 	}
 
 	MDSS_XLOG(ctl->num, atomic_read(&ctx->koff_cnt), XLOG_FUNC_EXIT);
+	mutex_unlock(&ctl->mfd->param_lock);
 	mutex_unlock(&cmd_off_mtx);
 	mutex_unlock(&ctl->offlock);
 	pr_debug("%s:-\n", __func__);

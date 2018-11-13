@@ -2469,6 +2469,13 @@ config FB_SIMPLE
 	  Configuration re: surface address, size, and format must be provided
 	  through device tree, or plain old platform data.
 
+config FB_QUICKDRAW
+	bool "Framebuffer quickdraw"
+	default n
+	---help---
+	  Allow userspace to register offscreen buffers with the
+	  fb quickdraw driver to be drawn to the panel on demand
+
 source "drivers/video/fbdev/omap/Kconfig"
 source "drivers/video/fbdev/omap2/Kconfig"
 source "drivers/video/fbdev/exynos/Kconfig"
@@ -2501,3 +2508,9 @@ config FB_SSD1307
 	help
 	  This driver implements support for the Solomon SSD1307
 	  OLED controller over I2C.
+
+config MOD_DISPLAY
+	tristate "Mod Display Support"
+	default n
+	help
+	  Say yes here if you wish to include the Mod Display support drivers.
