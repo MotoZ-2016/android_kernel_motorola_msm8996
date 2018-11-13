@@ -1381,18 +1381,17 @@ static void ufs_qcom_pm_qos_req_start(struct ufs_hba *hba, struct request *req)
 
 	group = &host->pm_qos.groups[ufs_qcom_cpu_to_group(host, req->cpu)];
 
-	spin_lock_irqsave(hba->host->host_lock, flags);
+	spin_lock_irqsave(&host->pm_qos.lock, flags);
 	if (!host->pm_qos.is_enabled)
 		goto out;
 
 	group->active_reqs++;
-	if (group->state != PM_QOS_REQ_VOTE &&
-			group->state != PM_QOS_VOTED) {
-		group->state = PM_QOS_REQ_VOTE;
-		queue_work(host->pm_qos.workq, &group->vote_work);
+	if (group->state != PM_QOS_VOTED) {
+		group->state = PM_QOS_VOTED;
+		pm_qos_update_request(&group->req, group->latency_us);
 	}
 out:
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
+	spin_unlock_irqrestore(&host->pm_qos.lock, flags);
 }
 
 /* hba->host->host_lock is assumed to be held by caller */
@@ -1407,48 +1406,30 @@ static void __ufs_qcom_pm_qos_req_end(struct ufs_qcom_host *host, int req_cpu)
 
 	if (--group->active_reqs)
 		return;
-	group->state = PM_QOS_REQ_UNVOTE;
-	queue_work(host->pm_qos.workq, &group->unvote_work);
+	cancel_delayed_work(&group->unvote_work);
+	queue_delayed_work(host->pm_qos.workq, &group->unvote_work,
+			usecs_to_jiffies(host->pm_qos.unvote_delay));
 }
 
 static void ufs_qcom_pm_qos_req_end(struct ufs_hba *hba, struct request *req,
 	bool should_lock)
 {
 	unsigned long flags;
+	struct ufs_qcom_host *host;
 
 	if (!hba || !req)
 		return;
 
-	if (should_lock)
-		spin_lock_irqsave(hba->host->host_lock, flags);
-	__ufs_qcom_pm_qos_req_end(ufshcd_get_variant(hba), req->cpu);
-	if (should_lock)
-		spin_unlock_irqrestore(hba->host->host_lock, flags);
-}
+	host = ufshcd_get_variant(hba);
 
-static void ufs_qcom_pm_qos_vote_work(struct work_struct *work)
-{
-	struct ufs_qcom_pm_qos_cpu_group *group =
-		container_of(work, struct ufs_qcom_pm_qos_cpu_group, vote_work);
-	struct ufs_qcom_host *host = group->host;
-	unsigned long flags;
-
-	spin_lock_irqsave(host->hba->host->host_lock, flags);
-
-	if (!host->pm_qos.is_enabled || !group->active_reqs) {
-		spin_unlock_irqrestore(host->hba->host->host_lock, flags);
-		return;
-	}
-
-	group->state = PM_QOS_VOTED;
-	spin_unlock_irqrestore(host->hba->host->host_lock, flags);
-
-	pm_qos_update_request(&group->req, group->latency_us);
+	spin_lock_irqsave(&host->pm_qos.lock, flags);
+	__ufs_qcom_pm_qos_req_end(host, req->cpu);
+	spin_unlock_irqrestore(&host->pm_qos.lock, flags);
 }
 
 static void ufs_qcom_pm_qos_unvote_work(struct work_struct *work)
 {
-	struct ufs_qcom_pm_qos_cpu_group *group = container_of(work,
+	struct ufs_qcom_pm_qos_cpu_group *group = container_of(to_delayed_work(work),
 		struct ufs_qcom_pm_qos_cpu_group, unvote_work);
 	struct ufs_qcom_host *host = group->host;
 	unsigned long flags;
@@ -1457,18 +1438,16 @@ static void ufs_qcom_pm_qos_unvote_work(struct work_struct *work)
 	 * Check if new requests were submitted in the meantime and do not
 	 * unvote if so.
 	 */
-	spin_lock_irqsave(host->hba->host->host_lock, flags);
+	spin_lock_irqsave(&host->pm_qos.lock, flags);
 
 	if (!host->pm_qos.is_enabled || group->active_reqs) {
-		spin_unlock_irqrestore(host->hba->host->host_lock, flags);
+		spin_unlock_irqrestore(&host->pm_qos.lock, flags);
 		return;
 	}
 
 	group->state = PM_QOS_UNVOTED;
-	spin_unlock_irqrestore(host->hba->host->host_lock, flags);
-
-	pm_qos_update_request_timeout(&group->req,
-		group->latency_us, UFS_QCOM_PM_QOS_UNVOTE_TIMEOUT_US);
+	pm_qos_update_request(&group->req, PM_QOS_DEFAULT_VALUE);
+	spin_unlock_irqrestore(&host->pm_qos.lock, flags);
 }
 
 static ssize_t ufs_qcom_pm_qos_enable_show(struct device *dev,
@@ -1499,22 +1478,21 @@ static ssize_t ufs_qcom_pm_qos_enable_store(struct device *dev,
 	 * Must take the spinlock and save irqs before changing the enabled
 	 * flag in order to keep correctness of PM QoS release.
 	 */
-	spin_lock_irqsave(hba->host->host_lock, flags);
+	spin_lock_irqsave(&host->pm_qos.lock, flags);
 	if (enable == host->pm_qos.is_enabled) {
-		spin_unlock_irqrestore(hba->host->host_lock, flags);
+		spin_unlock_irqrestore(&host->pm_qos.lock, flags);
 		return count;
 	}
 	host->pm_qos.is_enabled = enable;
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
+	spin_unlock_irqrestore(&host->pm_qos.lock, flags);
 
 	if (!enable)
 		for (i = 0; i < host->pm_qos.num_groups; i++) {
-			cancel_work_sync(&host->pm_qos.groups[i].vote_work);
-			cancel_work_sync(&host->pm_qos.groups[i].unvote_work);
-			spin_lock_irqsave(hba->host->host_lock, flags);
+			cancel_delayed_work_sync(&host->pm_qos.groups[i].unvote_work);
+			spin_lock_irqsave(&host->pm_qos.lock, flags);
 			host->pm_qos.groups[i].state = PM_QOS_UNVOTED;
 			host->pm_qos.groups[i].active_reqs = 0;
-			spin_unlock_irqrestore(hba->host->host_lock, flags);
+			spin_unlock_irqrestore(&host->pm_qos.lock, flags);
 			pm_qos_update_request(&host->pm_qos.groups[i].req,
 				PM_QOS_DEFAULT_VALUE);
 		}
@@ -1574,12 +1552,39 @@ static ssize_t ufs_qcom_pm_qos_latency_store(struct device *dev,
 		if (ret)
 			break;
 
-		spin_lock_irqsave(hba->host->host_lock, flags);
+		spin_lock_irqsave(&host->pm_qos.lock, flags);
 		host->pm_qos.groups[i].latency_us = value;
-		spin_unlock_irqrestore(hba->host->host_lock, flags);
+		spin_unlock_irqrestore(&host->pm_qos.lock, flags);
 	}
 
 	kfree(strbuf_copy);
+	return count;
+}
+
+static ssize_t ufs_qcom_unvote_delay_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct ufs_hba *hba = dev_get_drvdata(dev->parent);
+	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", host->pm_qos.unvote_delay);
+}
+
+static ssize_t ufs_qcom_unvote_delay_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int delay;
+	unsigned long flags;
+	struct ufs_hba *hba = dev_get_drvdata(dev->parent);
+	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
+
+	if (kstrtoint(buf, 10, &delay))
+		return -EINVAL;
+
+	spin_lock_irqsave(&host->pm_qos.lock, flags);
+	host->pm_qos.unvote_delay = delay;
+	spin_unlock_irqrestore(&host->pm_qos.lock, flags);
+
 	return count;
 }
 
@@ -1609,6 +1614,7 @@ static int ufs_qcom_pm_qos_init(struct ufs_qcom_host *host)
 		goto no_pm_qos;
 	}
 
+	spin_lock_init(&host->pm_qos.lock);
 	host->pm_qos.num_groups = num_groups;
 	host->pm_qos.groups = kcalloc(host->pm_qos.num_groups,
 			sizeof(struct ufs_qcom_pm_qos_cpu_group), GFP_KERNEL);
@@ -1637,15 +1643,14 @@ static int ufs_qcom_pm_qos_init(struct ufs_qcom_host *host)
 			goto free_groups;
 
 		host->pm_qos.groups[i].req.type = PM_QOS_REQ_AFFINE_CORES;
+		host->pm_qos.groups[i].req.flag = PM_QOS_FLAG_NO_BLOCK;
 		host->pm_qos.groups[i].req.cpus_affine =
 			host->pm_qos.groups[i].mask;
 		host->pm_qos.groups[i].state = PM_QOS_UNVOTED;
 		host->pm_qos.groups[i].active_reqs = 0;
 		host->pm_qos.groups[i].host = host;
 
-		INIT_WORK(&host->pm_qos.groups[i].vote_work,
-			ufs_qcom_pm_qos_vote_work);
-		INIT_WORK(&host->pm_qos.groups[i].unvote_work,
+		INIT_DELAYED_WORK(&host->pm_qos.groups[i].unvote_work,
 			ufs_qcom_pm_qos_unvote_work);
 	}
 
@@ -1704,6 +1709,17 @@ static int ufs_qcom_pm_qos_init(struct ufs_qcom_host *host)
 	if (device_create_file(host->hba->var->dev, attr))
 		dev_dbg(host->hba->dev, "Failed to create sysfs for pm_qos enable\n");
 
+	/* PM Qos unvote_delay sys-fs attribute */
+	attr = &host->pm_qos.unvote_delay_attr;
+	attr->show = ufs_qcom_unvote_delay_show;
+	attr->store = ufs_qcom_unvote_delay_store;
+	sysfs_attr_init(&attr->attr);
+	attr->attr.name = "unvote_delay";
+	attr->attr.mode = S_IRUGO | S_IWUSR;
+	if (device_create_file(host->hba->var->dev, attr))
+		dev_dbg(host->hba->dev, "Failed to create sysfs for unvote_delay\n");
+
+	host->pm_qos.unvote_delay = UFS_QCOM_PM_QOS_UNVOTE_TIMEOUT_US;
 	host->pm_qos.is_enabled = true;
 
 	return 0;
@@ -1720,7 +1736,7 @@ static void ufs_qcom_pm_qos_suspend(struct ufs_qcom_host *host)
 	int i;
 
 	for (i = 0; i < host->pm_qos.num_groups; i++)
-		flush_work(&host->pm_qos.groups[i].unvote_work);
+		flush_delayed_work(&host->pm_qos.groups[i].unvote_work);
 }
 
 static void ufs_qcom_pm_qos_remove(struct ufs_qcom_host *host)

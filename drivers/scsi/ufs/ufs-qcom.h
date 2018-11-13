@@ -255,7 +255,6 @@ enum ufs_qcom_pm_qos_state {
  * struct ufs_qcom_pm_qos_cpu_group - data related to cluster PM QoS voting
  *	logic
  * @req: request object for PM QoS
- * @vote_work: work object for voting procedure
  * @unvote_work: work object for un-voting procedure
  * @host: back pointer to the main structure
  * @state: voting state machine current state
@@ -266,8 +265,7 @@ enum ufs_qcom_pm_qos_state {
  */
 struct ufs_qcom_pm_qos_cpu_group {
 	struct pm_qos_request req;
-	struct work_struct vote_work;
-	struct work_struct unvote_work;
+	struct delayed_work unvote_work;
 	struct ufs_qcom_host *host;
 	enum ufs_qcom_pm_qos_state state;
 	s32 latency_us;
@@ -284,15 +282,19 @@ struct ufs_qcom_pm_qos_cpu_group {
  * @num_clusters: number of clusters defined
  * @default_cpu: cpu to use for voting for request not specifying a cpu
  * @is_enabled: flag specifying whether voting logic is enabled
+ * @lock: lock to protect qos status
  */
 struct ufs_qcom_pm_qos {
 	struct ufs_qcom_pm_qos_cpu_group *groups;
 	struct device_attribute enable_attr;
 	struct device_attribute latency_attr;
+	struct device_attribute unvote_delay_attr;
 	struct workqueue_struct *workq;
 	int num_groups;
 	int default_cpu;
+	int unvote_delay;
 	bool is_enabled;
+	spinlock_t lock;
 };
 
 struct ufs_qcom_host {
