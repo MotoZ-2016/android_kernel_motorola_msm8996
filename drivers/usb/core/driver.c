@@ -499,11 +499,15 @@ static int usb_unbind_interface(struct device *dev)
 int usb_driver_claim_interface(struct usb_driver *driver,
 				struct usb_interface *iface, void *priv)
 {
-	struct device *dev = &iface->dev;
+	struct device *dev;
 	struct usb_device *udev;
 	int retval = 0;
 	int lpm_disable_error;
 
+	if (!iface)
+		return -ENODEV;
+
+	dev = &iface->dev;
 	if (dev->driver)
 		return -EBUSY;
 
@@ -1759,6 +1763,9 @@ static int autosuspend_check(struct usb_device *udev)
 	int			w, i;
 	struct usb_interface	*intf;
 
+	if (udev->state == USB_STATE_NOTATTACHED)
+		return -ENODEV;
+
 	/* Fail if autosuspend is disabled, or any interfaces are in use, or
 	 * any interface drivers require remote wakeup but it isn't available.
 	 */
@@ -1766,6 +1773,9 @@ static int autosuspend_check(struct usb_device *udev)
 	if (udev->actconfig) {
 		for (i = 0; i < udev->actconfig->desc.bNumInterfaces; i++) {
 			intf = udev->actconfig->interface[i];
+
+			if (!intf)
+				return -ENODEV;
 
 			/* We don't need to check interfaces that are
 			 * disabled for runtime PM.  Either they are unbound

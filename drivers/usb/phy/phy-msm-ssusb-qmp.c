@@ -305,6 +305,24 @@ static const struct qmp_reg_val qmp_settings_rev2_misc[] = {
 	{-1, 0x00} /* terminating entry */
 };
 
+static bool max_tuning;
+module_param(max_tuning, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(max_tuning, "Maximize QMP PHY tuning");
+static const struct qmp_reg_val qmp_settings_rev2_max[] = {
+	{0x218, 0x1F}, /* QSERDES_TX_TX_EMP_POST1_LVL */
+	{0x22C, 0x1F}, /* QSERDES_TX_TX_DRV_LVL */
+	{-1, 0x00} /* terminating entry */
+};
+
+static int override_phy_init;
+module_param(override_phy_init, int, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(override_phy_init, "Override QMP PHY Settings");
+static struct qmp_reg_val qmp_settings_tune[] = {
+	{0x218, 0x1F}, /* QSERDES_TX_TX_EMP_POST1_LVL */
+	{0x22C, 0x1F}, /* QSERDES_TX_TX_DRV_LVL */
+	{-1, 0x00} /* terminating entry */
+};
+
 /* Override PLL Calibration */
 static const struct qmp_reg_val qmp_override_pll[] = {
 	{0x04, 0xE1}, /* QSERDES_COM_PLL_VCOTAIL_EN */
@@ -601,6 +619,26 @@ static int msm_ssphy_qmp_init(struct usb_phy *uphy)
 	if (ret) {
 		dev_err(uphy->dev, "Failed the main PHY configuration\n");
 		return ret;
+	}
+
+	if (max_tuning) {
+		ret = configure_phy_regs(uphy, qmp_settings_rev2_max);
+		if (ret) {
+			dev_err(uphy->dev, "Failed the max PHY configuration\n");
+			return ret;
+		}
+	} else if (override_phy_init) {
+		dev_err(uphy->dev, "QMP PHY Init Override :0x%x\n",
+			override_phy_init);
+		qmp_settings_tune[0].diff_clk_sel_val =
+			override_phy_init & 0x1F;
+		qmp_settings_tune[1].diff_clk_sel_val =
+			(override_phy_init >> 8) & 0x1F;
+		ret = configure_phy_regs(uphy, qmp_settings_tune);
+		if (ret) {
+			dev_err(uphy->dev, "Failed to tune PHY configuration\n");
+			return ret;
+		}
 	}
 
 	/* Feature specific configurations */

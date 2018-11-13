@@ -795,7 +795,7 @@ static int dwc3_probe(struct platform_device *pdev)
 	u8			hird_threshold;
 	u32			num_evt_buffs;
 	u32			core_id;
-	int			irq;
+	static u8		ctrl_number;
 
 	int			ret;
 
@@ -820,17 +820,6 @@ static int dwc3_probe(struct platform_device *pdev)
 	dwc->xhci_resources[1].end = res->end;
 	dwc->xhci_resources[1].flags = res->flags;
 	dwc->xhci_resources[1].name = res->name;
-
-	irq = platform_get_irq(to_platform_device(dwc->dev), 0);
-	ret = devm_request_irq(dev, irq, dwc3_interrupt, IRQF_SHARED, "dwc3",
-			dwc);
-	if (ret) {
-		dev_err(dwc->dev, "failed to request irq #%d --> %d\n",
-				irq, ret);
-		return -ENODEV;
-	}
-
-	dwc->irq = irq;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -884,6 +873,14 @@ static int dwc3_probe(struct platform_device *pdev)
 		of_property_read_u8(node, "snps,hird-threshold",
 				&hird_threshold);
 
+		ret = of_property_read_u8(node, "controller-number",
+				&dwc->ctrl_num);
+
+		if (!ret)
+			ctrl_number = dwc->ctrl_num;
+		else
+			dwc->ctrl_num = ++ctrl_number;
+
 		dwc->needs_fifo_resize = of_property_read_bool(node,
 				"tx-fifo-resize");
 		dwc->dr_mode = of_usb_get_dr_mode(node);
@@ -896,6 +893,9 @@ static int dwc3_probe(struct platform_device *pdev)
 
 		dwc->disable_clk_gating = of_property_read_bool(node,
 					"snps,disable-clk-gating");
+
+		dwc->xhci_limit_arbitrary_sg = of_property_read_bool(node,
+					"xhci,limit-arbitrary-sg");
 
 		dwc->num_normal_event_buffers = 1;
 		ret = of_property_read_u32(node,

@@ -177,6 +177,9 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		ret = clk_prepare_enable(clk);
 		if (ret)
 			goto put_hcd;
+	} else if (PTR_ERR(clk) == -EPROBE_DEFER) {
+		ret = -EPROBE_DEFER;
+		goto put_hcd;
 	}
 
 	if (pdev->dev.parent)
@@ -218,6 +221,11 @@ static int xhci_plat_probe(struct platform_device *pdev)
 	if ((node && of_property_read_bool(node, "usb3-lpm-capable")) ||
 			(pdata && pdata->usb3_lpm_capable))
 		xhci->quirks |= XHCI_LPM_SUPPORT;
+
+	if (pdata && pdata->limit_arbitrary_sg) {
+		xhci_dbg(xhci, "limit arbitrary sg\n");
+		hcd->self.no_sg_constraint = 0;
+	}
 
 	hcd_to_bus(xhci->shared_hcd)->skip_resume = true;
 	/*

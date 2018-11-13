@@ -120,6 +120,10 @@ unsigned int tune2;
 module_param(tune2, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(tune2, "QUSB PHY TUNE2");
 
+static int override_phy_init;
+module_param(override_phy_init, int, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(override_phy_init, "Override QUSB PHY Settings");
+
 struct qusb_phy {
 	struct usb_phy		phy;
 	void __iomem		*base;
@@ -156,6 +160,7 @@ struct qusb_phy {
 	bool			ulpi_mode;
 	bool			rm_pulldown;
 	bool			dpdm_pulsing_enabled;
+	bool			enable_high_z_state;
 
 	/* emulation targets specific */
 	void __iomem		*emu_phy_base;
@@ -169,6 +174,8 @@ struct qusb_phy {
 	spinlock_t		pulse_lock;
 	bool			put_into_high_z_state;
 	bool			scm_lvl_shifter_update;
+	struct mutex regulator_lock;
+
 };
 
 static void qusb_phy_update_tcsr_level_shifter(struct qusb_phy *qphy, u32 val)
@@ -211,22 +218,28 @@ static void qusb_phy_enable_clocks(struct qusb_phy *qphy, bool on)
 	if (!qphy->clocks_enabled && on) {
 		clk_prepare_enable(qphy->ref_clk_src);
 		clk_prepare_enable(qphy->ref_clk);
-		clk_prepare_enable(qphy->iface_clk);
-		clk_prepare_enable(qphy->core_clk);
+		if (qphy->enable_high_z_state) {
+			clk_prepare_enable(qphy->iface_clk);
+			clk_prepare_enable(qphy->core_clk);
+		}
 		clk_prepare_enable(qphy->cfg_ahb_clk);
 		qphy->clocks_enabled = true;
 	}
 
 	if (qphy->clocks_enabled && !on) {
-		clk_disable_unprepare(qphy->cfg_ahb_clk);
-		/*
-		 * FSM depedency beween iface_clk and core_clk.
-		 * Hence turned off core_clk before iface_clk.
-		 */
-		clk_disable_unprepare(qphy->core_clk);
-		clk_disable_unprepare(qphy->iface_clk);
+		if (qphy->enable_high_z_state) {
+			clk_disable_unprepare(qphy->cfg_ahb_clk);
+			/*
+			 * FSM depedency beween iface_clk and core_clk.
+			 * Hence turned off core_clk before iface_clk.
+			 */
+			clk_disable_unprepare(qphy->core_clk);
+			clk_disable_unprepare(qphy->iface_clk);
+		}
 		clk_disable_unprepare(qphy->ref_clk);
 		clk_disable_unprepare(qphy->ref_clk_src);
+		if (!qphy->enable_high_z_state)
+			clk_disable_unprepare(qphy->cfg_ahb_clk);
 		qphy->clocks_enabled = false;
 	}
 
@@ -322,11 +335,14 @@ static int qusb_phy_enable_power(struct qusb_phy *qphy, bool on)
 {
 	int ret = 0;
 
+	mutex_lock(&qphy->regulator_lock);
+
 	dev_dbg(qphy->phy.dev, "%s turn %s regulators. power_enabled:%d\n",
 			__func__, on ? "on" : "off", qphy->power_enabled);
 
 	if (qphy->power_enabled == on) {
 		dev_dbg(qphy->phy.dev, "PHYs' regulators are already ON.\n");
+		mutex_unlock(&qphy->regulator_lock);
 		return 0;
 	}
 
@@ -380,6 +396,7 @@ static int qusb_phy_enable_power(struct qusb_phy *qphy, bool on)
 	qphy->power_enabled = true;
 
 	pr_debug("%s(): QUSB PHY's regulators are turned ON.\n", __func__);
+	mutex_unlock(&qphy->regulator_lock);
 	return ret;
 
 disable_vdda33:
@@ -419,6 +436,7 @@ disable_vdd:
 err_vdd:
 	qphy->power_enabled = false;
 	dev_dbg(qphy->phy.dev, "QUSB PHY's regulators are turned OFF.\n");
+	mutex_unlock(&qphy->regulator_lock);
 	return ret;
 }
 
@@ -445,7 +463,8 @@ static int qusb_phy_update_dpdm(struct usb_phy *phy, int value)
 						qphy->rm_pulldown);
 			}
 
-			if (qphy->put_into_high_z_state) {
+			if (qphy->put_into_high_z_state
+				&& qphy->enable_high_z_state) {
 				qusb_phy_update_tcsr_level_shifter(qphy, 0x1);
 				qusb_phy_gdsc(qphy, true);
 				qusb_phy_enable_clocks(qphy, true);
@@ -727,6 +746,24 @@ static void qusb_phy_write_seq(void __iomem *base, u32 *seq, int cnt,
 	}
 }
 
+static void qusb_override_phy_init(struct usb_phy *phy)
+{
+	struct qusb_phy *qphy = container_of(phy, struct qusb_phy, phy);
+
+	if (!override_phy_init)
+		return;
+
+	dev_err(phy->dev, "QUSB PHY Init Override :0x%x\n", override_phy_init);
+	writel_relaxed(override_phy_init & 0xFF,
+				qphy->base + QUSB2PHY_PORT_TUNE1);
+	writel_relaxed((override_phy_init >> 8) & 0xFF,
+				qphy->base + QUSB2PHY_PORT_TUNE2);
+	writel_relaxed((override_phy_init >> 16) & 0xFF,
+				qphy->base + QUSB2PHY_PORT_TUNE3);
+	writel_relaxed((override_phy_init >> 24) & 0xFF,
+				qphy->base + QUSB2PHY_PORT_TUNE4);
+}
+
 static int qusb_phy_init(struct usb_phy *phy)
 {
 	struct qusb_phy *qphy = container_of(phy, struct qusb_phy, phy);
@@ -824,6 +861,8 @@ static int qusb_phy_init(struct usb_phy *phy)
 		writel_relaxed(tune2,
 				qphy->base + QUSB2PHY_PORT_TUNE2);
 	}
+
+	qusb_override_phy_init(phy);
 
 	/* ensure above writes are completed before re-enabling PHY */
 	wmb();
@@ -1045,6 +1084,25 @@ static int qusb_phy_set_suspend(struct usb_phy *phy, int suspend)
 			writel_relaxed(0x00,
 				qphy->base + QUSB2PHY_PORT_INTR_CTRL);
 
+			if (!qphy->enable_high_z_state) {
+			/*
+			 * Phy in non-driving mode leaves Dp and Dm lines in
+			 * high-Z state. Controller power collapse is not
+			 * switching phy to non-driving mode causing charger
+			 * detection failure. Bring phy to non-driving mode by
+			 * overriding controller output via UTMI interface.
+			 */
+			writel_relaxed(TERM_SELECT | XCVR_SELECT_FS |
+				OP_MODE_NON_DRIVE,
+				qphy->base + QUSB2PHY_PORT_UTMI_CTRL1);
+			writel_relaxed(UTMI_ULPI_SEL | UTMI_TEST_MUX_SEL,
+				qphy->base + QUSB2PHY_PORT_UTMI_CTRL2);
+
+			/* Disable PHY */
+			writel_relaxed(CLAMP_N_EN | FREEZIO_N | POWER_DOWN,
+				qphy->base + QUSB2PHY_PORT_POWERDOWN);
+			}
+
 			/* Make sure that above write is completed */
 			wmb();
 
@@ -1063,7 +1121,8 @@ static int qusb_phy_set_suspend(struct usb_phy *phy, int suspend)
 			 * with or without USB cable, it doesn't require
 			 * to put QUSB PHY into high-z state.
 			 */
-			qphy->put_into_high_z_state = true;
+			 if (qphy->enable_high_z_state)
+				qphy->put_into_high_z_state = true;
 		}
 		qphy->suspended = true;
 	} else {
@@ -1124,6 +1183,7 @@ static int qusb_phy_probe(struct platform_device *pdev)
 
 	qphy->phy.dev = dev;
 	spin_lock_init(&qphy->pulse_lock);
+	mutex_init(&qphy->regulator_lock);
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 							"qusb_phy_base");
@@ -1201,6 +1261,9 @@ static int qusb_phy_probe(struct platform_device *pdev)
 	qphy->dpdm_pulsing_enabled = of_property_read_bool(dev->of_node,
 					"qcom,enable-dpdm-pulsing");
 
+	qphy->enable_high_z_state = of_property_read_bool(dev->of_node,
+					"mmi,enable-high-z-state");
+
 	qphy->ref_clk_src = devm_clk_get(dev, "ref_clk_src");
 	if (IS_ERR(qphy->ref_clk_src))
 		dev_dbg(dev, "clk get failed for ref_clk_src\n");
@@ -1219,33 +1282,35 @@ static int qusb_phy_probe(struct platform_device *pdev)
 	if (IS_ERR(qphy->phy_reset))
 		return PTR_ERR(qphy->phy_reset);
 
-	if (of_property_match_string(dev->of_node,
-		"clock-names", "iface_clk") >= 0) {
-		qphy->iface_clk = devm_clk_get(dev, "iface_clk");
-		if (IS_ERR(qphy->iface_clk)) {
-			ret = PTR_ERR(qphy->iface_clk);
-			qphy->iface_clk = NULL;
-			if (ret == -EPROBE_DEFER)
-				return ret;
-			dev_err(dev, "couldn't get iface_clk(%d)\n", ret);
+	if (qphy->enable_high_z_state) {
+		if (of_property_match_string(dev->of_node,
+			"clock-names", "iface_clk") >= 0) {
+			qphy->iface_clk = devm_clk_get(dev, "iface_clk");
+			if (IS_ERR(qphy->iface_clk)) {
+				ret = PTR_ERR(qphy->iface_clk);
+				qphy->iface_clk = NULL;
+				if (ret == -EPROBE_DEFER)
+					return ret;
+				dev_err(dev, "couldn't get iface_clk(%d)\n", ret);
+			}
 		}
-	}
 
-	if (of_property_match_string(dev->of_node,
-		"clock-names", "core_clk") >= 0) {
-		qphy->core_clk = devm_clk_get(dev, "core_clk");
-		if (IS_ERR(qphy->core_clk)) {
-			ret = PTR_ERR(qphy->core_clk);
-			qphy->core_clk = NULL;
-			if (ret == -EPROBE_DEFER)
-				return ret;
-			dev_err(dev, "couldn't get core_clk(%d)\n", ret);
+		if (of_property_match_string(dev->of_node,
+			"clock-names", "core_clk") >= 0) {
+			qphy->core_clk = devm_clk_get(dev, "core_clk");
+			if (IS_ERR(qphy->core_clk)) {
+				ret = PTR_ERR(qphy->core_clk);
+				qphy->core_clk = NULL;
+				if (ret == -EPROBE_DEFER)
+					return ret;
+				dev_err(dev, "couldn't get core_clk(%d)\n", ret);
+			}
 		}
-	}
 
-	qphy->gdsc = devm_regulator_get(dev, "USB3_GDSC");
-	if (IS_ERR(qphy->gdsc))
-		qphy->gdsc = NULL;
+		qphy->gdsc = devm_regulator_get(dev, "USB3_GDSC");
+		if (IS_ERR(qphy->gdsc))
+			qphy->gdsc = NULL;
+	}
 
 	qphy->emulation = of_property_read_bool(dev->of_node,
 					"qcom,emulation");
