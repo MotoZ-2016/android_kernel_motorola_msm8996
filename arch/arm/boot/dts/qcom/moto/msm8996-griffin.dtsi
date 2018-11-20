@@ -69,9 +69,9 @@
 
 &pm8994_l19 {
 	regulator-boot-on;
-	regulator-min-microvolt = <3000000>;
-	regulator-max-microvolt = <3000000>;
-	qcom,init-voltage = <3000000>;
+	regulator-min-microvolt = <3200000>;
+	regulator-max-microvolt = <3200000>;
+	qcom,init-voltage = <3200000>;
 };
 
 &mdss_dsi0 {
