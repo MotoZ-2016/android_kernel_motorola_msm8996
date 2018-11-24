@@ -33,7 +33,6 @@
 #include "mdss_dba_utils.h"
 #endif
 #include "mdss_fb.h"
-#include "mdss_dropbox.h"
 #include "mdss_debug.h"
 #include "mdss_livedisplay.h"
 
@@ -1068,8 +1067,6 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	struct dsi_panel_cmds *on_cmds;
 	int ret = 0;
 	u8 pwr_mode = 0;
-	char *dropbox_issue = NULL;
-	static int dropbox_count;
 	static int panel_recovery_retry;
 
 	if (pdata == NULL) {
@@ -1120,7 +1117,6 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		if (pinfo->disp_on_check_val != pwr_mode) {
 			pr_err("%s: Display failure: read = 0x%x, expected = 0x%x\n",
 				__func__, pwr_mode, pinfo->disp_on_check_val);
-			dropbox_issue = MDSS_DROPBOX_MSG_PWR_MODE_BLACK;
 
 			if (pdata->panel_info.panel_dead)
 				pr_err("%s: Panel recovery FAILED!!\n", __func__);
@@ -1142,18 +1138,9 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		pdata->event_handler(pdata, MDSS_EVENT_UPDATE_LIVEDISPLAY,
 				(void *)(unsigned long) MODE_UPDATE_ALL);
 
-
 end:
 	if (pinfo->forced_tx_mode_ftr_enabled)
 		mdss_dsi_panel_forced_tx_mode_set(pinfo, true);
-
-	if (dropbox_issue != NULL) {
-		dropbox_count++;
-		MDSS_XLOG_TOUT_HANDLER_MMI("mdp", "dsi0_ctrl", "dsi0_phy",
-					"dsi1_ctrl", "dsi1_phy");
-		mdss_dropbox_report_event(dropbox_issue, dropbox_count);
-	} else
-		dropbox_count = 0;
 
 	if (!ctrl->ndx)
 		pr_info("%s[%d]-. Pwr_mode(0x0A) = 0x%x\n", __func__,

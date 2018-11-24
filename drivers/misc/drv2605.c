@@ -64,7 +64,6 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
-#include <linux/dropbox.h>
 
 /* Address of our device */
 #define DEVICE_ADDR 0x5A
@@ -316,25 +315,6 @@ static unsigned char LRA_init_sequence[] = {
 	Control3_REG, NG_Thresh_2 | INPUT_ANALOG,
 	AUTOCAL_MEM_INTERFACE_REG, AUTOCAL_TIME_500MS,
 };
-
-#define DRV2605_DROPBOX_REPORT_NAME "drv2605_error_report"
-#define DRV2605_DROPBOX_REPORT_SIZE 128
-
-void drv26x_dropbox_error_report(void)
-{
-	char dropbox_entry[DRV2605_DROPBOX_REPORT_SIZE];
-	size_t size = sizeof(dropbox_entry);
-	char *cur = dropbox_entry;
-	int len;
-
-	len = scnprintf(cur, size, "HW init failed\n");
-	cur += len;
-	size -= len;
-
-	pr_err("%s: dump:\n%s\n", __func__, dropbox_entry);
-	dropbox_queue_event_text(DRV2605_DROPBOX_REPORT_NAME, dropbox_entry,
-		strlen(dropbox_entry));
-}
 
 static ssize_t drv260x_vib_min_show(struct device *dev,
 		struct device_attribute *attr,
@@ -931,7 +911,6 @@ static int drv260x_probe(struct i2c_client *client,
 
 	if (err < 0) {
 		dev_err(&client->dev, "HW init failed\n");
-		drv26x_dropbox_error_report();
 		device_destroy(drv260x->class, drv260x->version);
 		class_destroy(drv260x->class);
 		return -ENODEV;

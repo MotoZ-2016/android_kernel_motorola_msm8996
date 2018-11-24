@@ -21,7 +21,6 @@
 #include <linux/wakelock.h>
 #include <linux/workqueue.h>
 
-#include "cust_kernel_ver.h"
 #include "greybus.h"
 
 #include "mods_protocols.h"
