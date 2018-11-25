@@ -39,6 +39,7 @@
 #include <linux/types.h>
 #include <linux/fs.h>
 #include <linux/debugfs.h>
+#include <linux/dropbox.h>
 
 #define FUEL_GAUGE_REPORT "Fuel-Gauge_Report"
 #define MAX_FULL_CAP "MAX1704X - Full Cap = %d\n"
@@ -515,10 +516,16 @@ static int max17042_get_property(struct power_supply *psy,
 		     val->intval < (chip->charge_full_des / 2))) {
 			snprintf(chip->fg_report_str, FUEL_GAUGE_REPORT_SIZE,
 				MAX_FULL_CAP, val->intval);
+			dropbox_queue_event_text(FUEL_GAUGE_REPORT,
+				chip->fg_report_str,
+				strlen(chip->fg_report_str));
 			chip->fullcap_report_sent = true;
 		} else if (chip->fullcap_report_sent) {
 			snprintf(chip->fg_report_str, FUEL_GAUGE_REPORT_SIZE,
 				 MAX_FULL_CAP, val->intval);
+			dropbox_queue_event_text(FUEL_GAUGE_REPORT,
+						 chip->fg_report_str,
+						 strlen(chip->fg_report_str));
 			chip->fullcap_report_sent = false;
 		}
 

@@ -16,6 +16,28 @@
 #ifndef __GREYBUS_CUST_KERNEL_VER_H
 #define __GREYBUS_CUST_KERNEL_VER_H
 
+/* Error Log Reporting */
+#ifdef CONFIG_DROPBOX
+#include <linux/dropbox.h>
+static inline void
+mods_queue_error_event_text(char *name, void *data, size_t size)
+{
+	dropbox_queue_event_text(name, data, size);
+}
+
+static inline void
+mods_queue_error_event_empty(char *name)
+{
+	dropbox_queue_event_empty(name);
+}
+#else
+static inline void
+mods_queue_error_event_text(char *name, void *data, size_t size) {}
+
+static inline void
+mods_queue_error_event_empty(char *name) {}
+#endif
+
 #if defined(CONFIG_MODS_MODBUS_EXT) || defined(CONFIG_MODS_MODBUS_SWITCH)
 #include <linux/mods/modbus_ext.h>
 
