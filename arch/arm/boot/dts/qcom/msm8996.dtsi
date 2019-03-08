@@ -163,14 +163,6 @@
 			compatible = "android,firmware";
 			fstab {
 				compatible = "android,fstab";
-     vendor {
-  				compatible = "android,vendor";
-  				dev = "/dev/block/platform/soc/624000.ufshc/by-name/oem";
-  				type = "squashfs";
-  				mnt_flags = "ro,barrier=1,discard";
-  				fsmgr_flags = "wait";
-  				status = "ok";
-  			};
 				 system {
 					compatible = "android,system";
 					dev = "/dev/block/platform/soc/624000.ufshc/by-name/system";
