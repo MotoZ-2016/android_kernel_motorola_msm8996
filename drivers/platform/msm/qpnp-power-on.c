@@ -1423,7 +1423,7 @@ qpnp_pon_config_input(struct qpnp_pon *pon,  struct qpnp_pon_config *cfg)
 	}
 
 	/* don't send dummy release event when system resumes */
-	__set_bit(INPUT_PROP_NO_DUMMY_RELEASE, pon->pon_input->propbit);
+	//__set_bit(INPUT_PROP_NO_DUMMY_RELEASE, pon->pon_input->propbit); - Breaks power button!!
 	input_set_capability(pon->pon_input, EV_KEY, cfg->key_code);
 
 	return 0;
